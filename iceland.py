@@ -131,8 +131,30 @@ def generate_player_profile(df, player_name, position_group):
     groups['Attacker'] = (
         ['CF', 'LW', 'RW'],
         {
-            "Pressing": ["Counterpressing recoveries per 90", "PAdj Interceptions", "Defensive duels per 90"],
-            "Ball Carrying": ["Progressive runs per 90", "Dribbles per 90", "Successful dribbles, %"],
-            "Creativity": ["Key passes per 90", "xA per 90", "Smart passes per 90", "Accurate smart passes, %"],
-            "Link Play": ["Passes per 90", "Accurate passes, %", "Deep completions per 90", "Passes to final third per 90"]
+        "Pressing": ["Counterpressing recoveries per 90", "PAdj Interceptions", "Defensive duels per 90"],
+        "Ball Carrying": ["Progressive runs per 90", "Dribbles per 90", "Successful dribbles, %"],
+        "Creativity": ["Key passes per 90", "xA per 90", "Smart passes per 90", "Accurate smart passes, %"],
+        "Link Play": ["Passes per 90", "Accurate passes, %", "Deep completions per 90", "Passes to final third per 90"],
+        "Movement": ["Accelerations per 90", "Touches in box per 90"],
+        "Box Presence": ["Touches in box per 90", "Shots per 90", "Aerial duels per 90", "Aerial duels won, %"],
+        "Finishing": ["Non-penalty goals per 90", "xG per 90", "Shots on target, %"]
+        },
+        {
+        "Poacher": ["Finishing", "Box Presence", "Movement"],
+        "Second Striker": ["Creativity", "Ball Carrying", "Finishing"],
+        "Link Forward": ["Link Play", "Creativity", "Ball Carrying"],
+        "False 9": ["Link Play", "Creativity", "Ball Carrying"],
+        "Complete Forward": ["Finishing", "Box Presence", "Ball Carrying", "Link Play"],
+        "Power Forward": ["Box Presence", "Finishing"],
+        "Pressing Forward": ["Pressing", "Movement", "Box Presence"]
+        }
+        )
+        ['CF', 'LW', 'RW'],
+        {
+        "Pressing": ["Counterpressing recoveries per 90", "PAdj Interceptions", "Defensive duels per 90"],
+        "Ball Carrying": ["Progressive runs per 90", "Dribbles per 90", "Successful dribbles, %"],
+        "Creativity": ["Key passes per 90", "xA per 90", "Smart passes per 90", "Accurate smart passes, %"],
+        "Link Play": ["Passes per 90", "Accurate passes, %", "Deep completions per 90", "Passes to final third per 90"]}
+
+
 
