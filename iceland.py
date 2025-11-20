@@ -134,5 +134,5 @@ def generate_player_profile(df, player_name, position_group):
             "Pressing": ["Counterpressing recoveries per 90", "PAdj Interceptions", "Defensive duels per 90"],
             "Ball Carrying": ["Progressive runs per 90", "Dribbles per 90", "Successful dribbles, %"],
             "Creativity": ["Key passes per 90", "xA per 90", "Smart passes per 90", "Accurate smart passes, %"],
-            "Link Play": ["Passes per 90", "Accurate passes, %", "Deep completions per 90", "Passes
+            "Link Play": ["Passes per 90", "Accurate passes, %", "Deep completions per 90", "Passes to final third per 90"]
 
