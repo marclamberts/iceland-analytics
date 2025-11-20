@@ -32,6 +32,10 @@ position_group = st.selectbox(
 
 run_button = st.button("Generate Profile")
 
+if run_button:
+    # call your function here
+    generate_player_profile(df, player_name, position_group)
+
 # ------------------- Function -------------------
 def generate_player_profile(df, player_name, position_group):
     df = df.copy()
