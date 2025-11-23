@@ -293,16 +293,39 @@ def generate_player_profile(df, player_name, position_group):
         ax_bar.text(w + 1, bar.get_y() + bar.get_height() / 2, f"{w:.1f}",
                     va="center", fontsize=9)
 
-    # Similar players
-    fig.text(0.05, 0.12, "Similar Player Profiles", fontsize=12, weight="bold")
-    for i, (_, row) in enumerate(top_similar.iterrows()):
-        tx = 0.05 + i * (0.22 + 0.02)
-        rect = plt.Rectangle((tx, 0.02), 0.22, 0.08, transform=fig.transFigure,
-                             facecolor="lightgreen", edgecolor="black", lw=1)
-        fig.add_artist(rect)
-        fig.text(tx + 0.01, 0.08, row["Player"], fontsize=10, weight="bold")
-        fig.text(tx + 0.01, 0.06, row["Team"], fontsize=9)
-        fig.text(tx + 0.01, 0.04, f"{row['Similarity'] * 100:.1f}% Similarity", fontsize=9)
+    # ---------------- 5. SIMILAR PLAYERS (100% NAN SAFE) ----------------
+category_cols = [col for col in category_percentile_cols if col in data.columns]
+
+# If no columns exist (edge case), skip similarity computation entirely
+if len(category_cols) == 0:
+    top_similar = pd.DataFrame(columns=["Player", "Team", "Similarity"])
+else:
+    # Fill every NaN with column means (computed AFTER filtering)
+    data[category_cols] = data[category_cols].astype(float).apply(
+        lambda col: col.fillna(col.mean())
+    )
+
+    # Player vector (force fill remaining NaNs)
+    player_vector = player_row[category_cols].values.astype(float)
+    player_vector = np.nan_to_num(
+        player_vector,
+        nan=np.nanmean(player_vector[
+            ~np.isnan(player_vector)
+        ]) if np.isnan(player_vector).any() else player_vector.mean()
+    ).reshape(1, -1)
+
+    # All other vectors
+    all_vectors = data[category_cols].values.astype(float)
+    all_vectors = np.nan_to_num(all_vectors, nan=np.nanmean(all_vectors))
+
+    # Final similarity calculation
+    similarities = cosine_similarity(player_vector, all_vectors).flatten()
+
+    sim_df = data.copy()
+    sim_df["Similarity"] = similarities
+    sim_df = sim_df[sim_df["Player"] != player_name]
+    top_similar = sim_df.sort_values("Similarity", ascending=False).head(4)
+
 
     # Streamlit output
     st.pyplot(fig)
