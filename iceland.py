@@ -7,32 +7,37 @@ from sklearn.metrics.pairwise import cosine_similarity
 import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
 
-# ------------------- Streamlit UI -------------------
-st.sidebar.header("Data Upload")
-st.sidebar.write("Upload your NWSL dataset to begin.")
-# Load Excel file from same folder
-file_path = "Iceland.xlsx"
-
-player_name = st.text_input("Player Name")
-position_group = st.selectbox(
-    "Select Position Group",
-    ['Centre-back', 'Full-back', 'Midfielder', 'Attacking Midfielder', 'Attacker']
-)
-
-
+# ------------------- PAGE CONFIG (must be first Streamlit command) -------------------
 st.set_page_config(layout="wide", page_title="Player Profile Generator")
+
+# ------------------- LOAD DATA -------------------
+file_path = "Iceland.xlsx"
+df = pd.read_excel(file_path)
+
+# ------------------- TITLE -------------------
 st.title("Player Profile Generator")
 
-uploaded_file = st.file_uploader("Upload NWSL 2025 Excel File", type=["xlsx"])
-player_name = st.text_input("Player Name")
-position_group = st.selectbox(
+# ------------------- SIDEBAR FILTERS -------------------
+st.sidebar.header("Filters")
+
+# TEAM DROPDOWN
+teams = sorted(df["Team"].dropna().unique())
+selected_team = st.sidebar.selectbox("Select Team", teams)
+
+# PLAYER DROPDOWN (Filtered by Team)
+players = sorted(df[df["Team"] == selected_team]["Player"].dropna().unique())
+selected_player = st.sidebar.selectbox("Select Player", players)
+
+# POSITION GROUP DROPDOWN
+position_group = st.sidebar.selectbox(
     "Select Position Group",
     ['Centre-back', 'Full-back', 'Midfielder', 'Attacking Midfielder', 'Attacker']
 )
 
-run_button = st.button("Generate Profile")
+# RUN BUTTON
+run_button = st.sidebar.button("Generate Profile")
 
-# ------------------- Function -------------------
+# ------------------- FUNCTION -------------------
 def generate_player_profile(df, player_name, position_group):
     df = df.copy()
     df.rename(columns={"Nationality": "Passport country"}, inplace=True)
@@ -149,4 +154,11 @@ def generate_player_profile(df, player_name, position_group):
             "Pressing Forward": ["Pressing", "Movement", "Box Presence"]
         }
     )
-        
+
+    # You can add your calculations, charts, profiles, etc. here.
+    st.write(f"### Profile for **{player_name}** ({position_group})")
+    st.write("⚠️ Function loaded — ready for your logic.")
+
+# ------------------- RUN PROFILE GENERATION -------------------
+if run_button:
+    generate_player_profile(df, selected_player, position_group)
