@@ -613,6 +613,7 @@ def generate_player_profile(df, player_name, position_group):
         )
 
     st.pyplot(fig)
+    st.write(df.columns.tolist())
 
 
 # ============================================================
