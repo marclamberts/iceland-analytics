@@ -8,19 +8,19 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
 
 # =============================================================
-# PAGE SETTINGS
+# PAGE CONFIG
 # =============================================================
 st.set_page_config(layout="wide", page_title="Player Profile Generator")
 st.title("Player Profile Generator")
 
 # =============================================================
-# LOAD FIXED EXCEL FILE (NO UPLOAD)
+# LOAD FIXED EXCEL FILE
 # =============================================================
 file_path = "Iceland.xlsx"
 df = pd.read_excel(file_path)
 
 # =============================================================
-# TEAM + PLAYER FILTERS
+# TEAM + PLAYER FILTER
 # =============================================================
 teams = sorted(df["Team"].dropna().unique().tolist())
 selected_team = st.selectbox("Select Team", teams)
@@ -37,7 +37,7 @@ run_button = st.button("Generate Profile")
 
 
 # =============================================================
-# CORRECTED POSITION GROUP DEFINITIONS
+# POSITION GROUP DEFINITIONS (MATCHING YOUR DATA)
 # =============================================================
 groups = {
 
@@ -135,15 +135,8 @@ groups = {
                 "Accurate crosses, %",
                 "Touches in box per 90",
             ],
-            "Overlapping": [
-                "Accelerations per 90",
-                "Fouls suffered per 90",
-            ],
-            "Ball Carrying": [
-                "Progressive runs per 90",
-                "Dribbles per 90",
-                "Successful dribbles, %",
-            ],
+            "Overlapping": ["Accelerations per 90", "Fouls suffered per 90"],
+            "Ball Carrying": ["Progressive runs per 90", "Dribbles per 90", "Successful dribbles, %"],
         },
         {
             "False Wing": ["Playmaking", "Ball Carrying", "Final Third"],
@@ -221,44 +214,14 @@ groups = {
                 "PAdj Interceptions",
                 "Defensive duels per 90",
             ],
-            "Build up": [
-                "Passes per 90",
-                "Accurate passes, %",
-                "Progressive passes per 90",
-            ],
-            "Final ball": [
-                "Key passes per 90",
-                "xA per 90",
-                "Deep completions per 90",
-            ],
-            "Wide creation": [
-                "Crosses per 90",
-                "Accurate crosses, %",
-                "Passes to penalty area per 90",
-            ],
-            "Movement": [
-                "Accelerations per 90",
-                "Touches in box per 90",
-            ],
-            "Ball Carrying": [
-                "Progressive runs per 90",
-                "Dribbles per 90",
-            ],
-            "1v1 ability": [
-                "Dribbles per 90",
-                "Successful dribbles, %",
-                "Fouls suffered per 90",
-            ],
-            "Box presence": [
-                "Touches in box per 90",
-                "xG per 90",
-                "Shots per 90",
-            ],
-            "Finishing": [
-                "Non-penalty goals per 90",
-                "xG per 90",
-                "Shots on target, %",
-            ],
+            "Build up": ["Passes per 90", "Accurate passes, %", "Progressive passes per 90"],
+            "Final ball": ["Key passes per 90", "xA per 90", "Deep completions per 90"],
+            "Wide creation": ["Crosses per 90", "Accurate crosses, %", "Passes to penalty area per 90"],
+            "Movement": ["Accelerations per 90", "Touches in box per 90"],
+            "Ball Carrying": ["Progressive runs per 90", "Dribbles per 90"],
+            "1v1 ability": ["Dribbles per 90", "Successful dribbles, %", "Fouls suffered per 90"],
+            "Box presence": ["Touches in box per 90", "xG per 90", "Shots per 90"],
+            "Finishing": ["Non-penalty goals per 90", "xG per 90", "Shots on target, %"],
         },
         {
             "Winger": ["Wide creation", "1v1 ability", "Ball Carrying"],
@@ -278,38 +241,12 @@ groups = {
                 "PAdj Interceptions",
                 "Defensive duels per 90",
             ],
-            "Ball Carrying": [
-                "Progressive runs per 90",
-                "Dribbles per 90",
-                "Successful dribbles, %",
-            ],
-            "Creativity": [
-                "Key passes per 90",
-                "xA per 90",
-                "Smart passes per 90",
-                "Accurate smart passes, %",
-            ],
-            "Link Play": [
-                "Passes per 90",
-                "Accurate passes, %",
-                "Deep completions per 90",
-                "Passes to final third per 90",
-            ],
-            "Movement": [
-                "Accelerations per 90",
-                "Touches in box per 90",
-            ],
-            "Box Presence": [
-                "Touches in box per 90",
-                "Shots per 90",
-                "Aerial duels per 90",
-                "Aerial duels won, %",
-            ],
-            "Finishing": [
-                "Non-penalty goals per 90",
-                "xG per 90",
-                "Shots on target, %",
-            ],
+            "Ball Carrying": ["Progressive runs per 90", "Dribbles per 90", "Successful dribbles, %"],
+            "Creativity": ["Key passes per 90", "xA per 90", "Smart passes per 90", "Accurate smart passes, %"],
+            "Link Play": ["Passes per 90", "Accurate passes, %", "Deep completions per 90", "Passes to final third per 90"],
+            "Movement": ["Accelerations per 90", "Touches in box per 90"],
+            "Box Presence": ["Touches in box per 90", "Shots per 90", "Aerial duels per 90", "Aerial duels won, %"],
+            "Finishing": ["Non-penalty goals per 90", "xG per 90", "Shots on target, %"],
         },
         {
             "Poacher": ["Finishing", "Box Presence", "Movement"],
@@ -325,7 +262,7 @@ groups = {
 
 
 # =============================================================
-# GENERATE PLAYER PROFILE
+# GENERATE PROFILE
 # =============================================================
 def generate_player_profile(df, player_name, position_group):
 
@@ -333,91 +270,91 @@ def generate_player_profile(df, player_name, position_group):
     data = df.copy()
 
     # =========================================================
-    # CATEGORY PERCENTILES (FULLY NAN-PROOF)
+    # CATEGORY PERCENTILES (TRUE CALCULATION – NO DEFAULTS)
     # =========================================================
+    category_percentile_cols = []
+
     for cat, metrics in categories.items():
 
         pct_cols = []
 
         for m in metrics:
             if m in data.columns:
-                z = zscore(data[m].astype(float))
+                col = data[m].astype(float)
+                z = zscore(col)
                 data[f"{m}_pct"] = norm.cdf(z) * 100
                 pct_cols.append(f"{m}_pct")
 
-        # NO metrics for this category → assign 50
+        # If no metrics exist → skip this category
         if len(pct_cols) == 0:
-            data[f"{cat}_percentile"] = 50
-        else:
-            # Mean ignoring NaNs
-            cat_mean = data[pct_cols].mean(axis=1, skipna=True)
-            # If player has no valid value → fallback to 50
-            cat_mean = cat_mean.fillna(50)
-            data[f"{cat}_percentile"] = cat_mean
+            continue
+
+        # TRUE category mean (NaN ignored)
+        data[f"{cat}_percentile"] = data[pct_cols].mean(axis=1, skipna=True)
+
+        category_percentile_cols.append(f"{cat}_percentile")
 
     # =========================================================
-    # ROLE SCORES (NAN-PROOF)
+    # ROLE SCORES
     # =========================================================
     for role, cat_list in role_defs.items():
         cols = [f"{c}_percentile" for c in cat_list if f"{c}_percentile" in data.columns]
-        if len(cols) == 0:
-            data[role] = 0
+        if len(cols):
+            data[role] = data[cols].mean(axis=1, skipna=True)
         else:
-            data[role] = data[cols].mean(axis=1, skipna=True).fillna(0)
+            data[role] = 0
 
     # =========================================================
     # OVERALL RATING
     # =========================================================
-    all_cat_cols = [f"{c}_percentile" for c in categories]
-    overall = data[all_cat_cols].mean(axis=1, skipna=True)
-    z = zscore(overall)
-    data["Overall_percentile"] = (norm.cdf(z) * 100)
+    if len(category_percentile_cols):
+        z = zscore(data[category_percentile_cols].mean(axis=1, skipna=True))
+        data["Overall_percentile"] = norm.cdf(z) * 100
+    else:
+        data["Overall_percentile"] = 0
 
+    # Player row
     player = data[data["Player"] == player_name].iloc[0]
 
-    # Final cleaned category percentiles
-    cat_percentiles = {
-        cat: float(player.get(f"{cat}_percentile", 50))
-        for cat in categories
-    }
+    # Clean category percentiles for chart
+    cat_percentiles = {}
+    for col in category_percentile_cols:
+        cat = col.replace("_percentile", "")
+        cat_percentiles[cat] = float(player[col])
 
-    # Role scores cleaned
-    role_scores = {
-        r: float(0 if pd.isna(player.get(r, 0)) else player.get(r, 0))
-        for r in role_defs
-    }
+    # Role scores
+    role_scores = {r: float(player[r]) for r in role_defs}
+
     top_roles = sorted(role_scores.items(), key=lambda x: x[1], reverse=True)[:3]
 
     # =========================================================
-    # SIMILARITY (FULLY NAN-PROOF)
+    # SIMILARITY (FULLY NAN-SAFE)
     # =========================================================
-    valid_sim_cols = all_cat_cols
-    data[valid_sim_cols] = data[valid_sim_cols].fillna(data[valid_sim_cols].mean())
+    sim_cols = category_percentile_cols
+    data[sim_cols] = data[sim_cols].fillna(data[sim_cols].mean())
 
-    player_vec = player[valid_sim_cols].to_numpy().reshape(1, -1)
-    player_vec = np.nan_to_num(player_vec, nan=np.nanmean(player_vec))
+    player_vec = player[sim_cols].to_numpy().reshape(1, -1)
+    all_vecs = data[sim_cols].to_numpy()
 
-    all_vec = np.nan_to_num(data[valid_sim_cols].to_numpy(), nan=np.nanmean(data[valid_sim_cols]))
-
-    sims = cosine_similarity(player_vec, all_vec).flatten()
+    sims = cosine_similarity(player_vec, all_vecs).flatten()
     data["Similarity"] = sims
 
-    top_sim = (
+    top_similar = (
         data[data["Player"] != player_name]
         .sort_values("Similarity", ascending=False)
         .head(4)
     )
 
     # =========================================================
-    # VISUAL OUTPUT
+    # VISUALIZATION
     # =========================================================
     fig = plt.figure(figsize=(11, 7), dpi=150)
     fig.patch.set_facecolor("white")
 
-    # Title
+    # TITLE
     fig.text(0.05, 0.93, player_name, fontsize=24, weight="bold")
 
-    # BIOGRAPHY
+    # BIO
     bio = f"""
 Age: {player.get("Age", "N/A")}
 Position: {player.get("Position", "N/A")}
@@ -428,59 +365,61 @@ Minutes: {int(player.get("Minutes played", 0))}
     fig.text(0.05, 0.88, "Biography", fontsize=14, weight="bold")
     fig.text(0.05, 0.85, bio, fontsize=11, va="top")
 
-    # ROLE SCORES (BAR BLOCK)
+    # ROLE SCORES
     x0, y0 = 0.55, 0.92
     box = 0.012
-    for i, r in enumerate(role_defs.keys()):
-        s = role_scores[r]
-        fig.text(x0, y0 - i * 0.045, r, fontsize=10)
 
+    for i, (r, score) in enumerate(role_scores.items()):
+        fig.text(x0, y0 - i * 0.045, r, fontsize=10)
         for j in range(10):
-            c = "gold" if j < round(s / 10) else "lightgrey"
+            c = "gold" if j < round(score / 10) else "lightgrey"
             rect = plt.Rectangle(
                 (x0 + 0.22 + j * 0.022, y0 - i * 0.045 - 0.005),
                 box, box,
                 transform=fig.transFigure,
                 facecolor=c,
-                edgecolor="black",
-                lw=0.3,
+                edgecolor="black"
             )
             fig.add_artist(rect)
 
-    # OVERALL TILE
-    rating = float(player["Overall_percentile"])
+    # OVERALL
     rect = plt.Rectangle((0.33, 0.78), 0.10, 0.08, transform=fig.transFigure,
                          facecolor="lightblue", edgecolor="black")
     fig.add_artist(rect)
     fig.text(0.335, 0.83, "Rating:", fontsize=10, weight="bold")
-    fig.text(0.38, 0.795, f"{rating:.1f}", fontsize=13, weight="bold")
+    fig.text(0.38, 0.795, f"{player['Overall_percentile']:.1f}",
+             fontsize=13, weight="bold")
 
     # TOP ROLES TILES
     tile_w, tile_h = 0.14, 0.06
+
     for i, (r, s) in enumerate(top_roles):
         tx = 0.05 + i * (tile_w + 0.025)
         rect = plt.Rectangle((tx, 0.64), tile_w, tile_h, transform=fig.transFigure,
                              facecolor="gold", edgecolor="black")
         fig.add_artist(rect)
-        fig.text(tx + 0.01, 0.64 + tile_h / 2, r, fontsize=8, weight="bold", va="center")
-        fig.text(tx + tile_w - 0.01, 0.64 + tile_h / 2, f"{s:.0f}", fontsize=10,
-                 va="center", ha="right")
+        fig.text(tx + 0.01, 0.64 + tile_h/2, r, fontsize=8, weight="bold", va="center")
+        fig.text(tx + tile_w - 0.01, 0.64 + tile_h/2, f"{s:.0f}",
+                 fontsize=10, weight="bold", va="center", ha="right")
 
     # CATEGORY BARS
     ax = fig.add_axes([0.05, 0.20, 0.9, 0.35])
     sorted_cp = dict(sorted(cat_percentiles.items(), key=lambda x: x[1]))
+
     bars = ax.barh(list(sorted_cp.keys()), list(sorted_cp.values()),
                    color="gold", edgecolor="black")
     ax.set_xlim(0, 100)
     ax.set_title("Positional Responsibilities", fontsize=12, weight="bold")
     ax.grid(axis="x", linestyle="--", alpha=0.6)
+
     for b in bars:
         w = b.get_width()
         ax.text(w + 1, b.get_y() + b.get_height() / 2, f"{w:.1f}", va="center", fontsize=9)
 
     # SIMILAR PLAYERS
     fig.text(0.05, 0.12, "Similar Player Profiles", fontsize=12, weight="bold")
-    for i, (_, row) in enumerate(top_sim.iterrows()):
+
+    for i, (_, row) in enumerate(top_similar.iterrows()):
         tx = 0.05 + i * (0.22 + 0.02)
         rect = plt.Rectangle((tx, 0.02), 0.22, 0.08, transform=fig.transFigure,
                              facecolor="lightgreen", edgecolor="black")
@@ -493,7 +432,7 @@ Minutes: {int(player.get("Minutes played", 0))}
 
 
 # =============================================================
-# RUN APP
+# RUN
 # =============================================================
 if run_button:
     generate_player_profile(df, selected_player, position_group)
