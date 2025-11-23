@@ -7,18 +7,120 @@ from scipy.stats import zscore
 # =============================================================
 # PAGE CONFIG
 # =============================================================
-st.set_page_config(layout="wide", page_title="Outlier Scouting Platform")
+st.set_page_config(layout="wide", page_title="Outlier Scouting – ASA Style")
 
-# -------------------------------------------------------------
+# =============================================================
+# GLOBAL STYLE (ASA-LIKE)
+# =============================================================
+st.markdown(
+    """
+<style>
+/* App background */
+[data-testid="stAppViewContainer"] {
+    background-color: #F2F3F5;
+}
+
+/* Sidebar styling */
+[data-testid="stSidebar"] {
+    background-color: #0A2540;
+}
+
+[data-testid="stSidebar"] * {
+    color: #E5E7EB !important;
+}
+
+.sidebar-title {
+    font-weight: 800;
+    font-size: 1.25rem;
+    color: #F9FAFB;
+    margin-bottom: 0.5rem;
+}
+
+.sidebar-subtitle {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #9CA3AF;
+}
+
+/* Main headers */
+.main-header {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #0F172A;
+    margin-bottom: 0.25rem;
+}
+
+.main-subheader {
+    font-size: 0.9rem;
+    color: #6B7280;
+    margin-bottom: 1.25rem;
+}
+
+/* Section headers */
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #111827;
+    margin: 1.2rem 0 0.4rem 0;
+}
+
+/* Cards */
+.metric-card {
+    background-color: #FFFFFF;
+    border-radius: 14px;
+    padding: 0.9rem 1.1rem;
+    box-shadow: 0 2px 8px rgba(15,23,42,0.08);
+    border: 1px solid #E5E7EB;
+}
+
+.metric-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #6B7280;
+}
+
+.metric-value-lg {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #111827;
+}
+
+.metric-value-sm {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #111827;
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab"] {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+/* Dataframe tweaks */
+.dataframe td, .dataframe th {
+    font-size: 0.9rem;
+}
+
+/* Reduce top padding */
+.block-container {
+    padding-top: 1.5rem;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+# =============================================================
 # LOAD DATA
-# -------------------------------------------------------------
-DATA_PATH = "Iceland.xlsx"  # your uploaded file
+# =============================================================
+DATA_PATH = "Iceland.xlsx"
 df_raw = pd.read_excel(DATA_PATH)
-
-# Make a working copy
 df = df_raw.copy()
 
-# Ensure expected columns exist (will raise clear error if missing)
+# Required columns for scores
 required_cols = [
     "Player", "Team", "Team within selected timeframe", "Position", "Minutes played",
     "Goals per 90", "xG per 90", "Shots per 90", "Assists per 90", "xA per 90",
@@ -68,12 +170,10 @@ def add_outlier_scores(df: pd.DataFrame) -> pd.DataFrame:
         "Passes to penalty area per 90",
     ]
 
-    # Composite raw scores (mean of available metrics)
     df["Offensive_raw"] = df[offensive_metrics].mean(axis=1, skipna=True)
     df["Defensive_raw"] = df[defensive_metrics].mean(axis=1, skipna=True)
     df["KeyPassing_raw"] = df[key_passing_metrics].mean(axis=1, skipna=True)
 
-    # Convert to percentiles
     df["Offensive Score"] = percentile(df["Offensive_raw"])
     df["Defensive Score"] = percentile(df["Defensive_raw"])
     df["Key Passing Score"] = percentile(df["KeyPassing_raw"])
@@ -82,16 +182,14 @@ def add_outlier_scores(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def radar_chart(player_row: pd.Series, metrics: dict, title: str = ""):
-    """Draw a radar chart for given metric -> label mapping on one player."""
+    """Draw a radar chart for given metric -> column mapping."""
     labels = list(metrics.keys())
     cols = list(metrics.values())
 
     values = []
     for c in cols:
-        if c in player_row.index and not pd.isna(player_row[c]):
-            values.append(float(player_row[c]))
-        else:
-            values.append(0.0)  # fallback
+        v = player_row.get(c, np.nan)
+        values.append(0 if pd.isna(v) else float(v))
 
     # Close the circle
     values += values[:1]
@@ -100,58 +198,45 @@ def radar_chart(player_row: pd.Series, metrics: dict, title: str = ""):
     angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
     angles += angles[:1]
 
-    fig, ax = plt.subplots(subplot_kw=dict(polar=True), figsize=(5, 5))
+    fig, ax = plt.subplots(subplot_kw=dict(polar=True), figsize=(4.8, 4.8))
     ax.plot(angles, values, linewidth=2)
     ax.fill(angles, values, alpha=0.25)
     ax.set_xticks(angles[:-1])
     ax.set_xticklabels(labels)
     ax.set_yticklabels([])
-    ax.set_title(title, y=1.1)
-    ax.grid(True)
+    ax.set_title(title, y=1.08)
+    ax.grid(True, alpha=0.4)
 
     st.pyplot(fig)
 
 
-def zscore_series(series: pd.Series) -> pd.Series:
-    """Safe zscore for a numeric series."""
-    if series.std(ddof=0) == 0 or series.isna().all():
-        return pd.Series([0] * len(series), index=series.index)
-    return (series - series.mean()) / series.std(ddof=0)
-
-
-# Add scores once globally
+# Apply scoring globally
 df = add_outlier_scores(df)
 
 
 # =============================================================
-# GLOBAL SIDEBAR NAVIGATION
-# =============================================================
-st.sidebar.title("Navigation")
-page = st.sidebar.radio(
-    "Go to",
-    ["🏠 Home", "📊 Outlier Scouting", "👤 Player Explorer", "📈 Visual Explorer"]
-)
-
-
-# =============================================================
-# COMMON FILTER UI (function to reuse)
+# FILTER PANEL (REUSABLE)
 # =============================================================
 def filter_panel(df: pd.DataFrame):
-    """Return filtered dataframe and filter selections."""
-    st.sidebar.header("Base Filters")
+    """Sidebar base filters used on all pages."""
+    st.sidebar.markdown('<div class="sidebar-title">Outlier Scouting</div>', unsafe_allow_html=True)
+    st.sidebar.markdown(
+        '<div class="sidebar-subtitle">Base Filters</div>',
+        unsafe_allow_html=True,
+    )
 
     # Player search
-    player_search = st.sidebar.text_input("Search Player Name")
+    player_search = st.sidebar.text_input("Player search")
 
     # Team within timeframe
     teams = sorted(df["Team within selected timeframe"].dropna().unique().tolist())
-    team = st.sidebar.selectbox("Team within selected timeframe", ["All"] + teams)
+    team = st.sidebar.selectbox("Team (selected timeframe)", ["All"] + teams)
 
     # Minutes played
     min_min = int(df["Minutes played"].min())
     max_min = int(df["Minutes played"].max())
     minutes_range = st.sidebar.slider(
-        "Minutes Played",
+        "Minutes played",
         min_value=min_min,
         max_value=max_min,
         value=(min_min, max_min),
@@ -160,9 +245,7 @@ def filter_panel(df: pd.DataFrame):
     # Position
     positions = sorted(df["Position"].dropna().unique().tolist())
     pos_selected = st.sidebar.multiselect(
-        "Position(s)",
-        options=positions,
-        default=positions,
+        "Position(s)", options=positions, default=positions
     )
 
     df_f = df.copy()
@@ -184,54 +267,95 @@ def filter_panel(df: pd.DataFrame):
 
 
 # =============================================================
-# PAGE: HOME
+# NAVIGATION
 # =============================================================
-if page == "🏠 Home":
-    st.header("🏠 Home")
+st.sidebar.markdown("---")
+menu = st.sidebar.radio(
+    "View",
+    ["🏠 Dashboard", "📊 Outlier Scouting", "👤 Player Explorer", "📈 Visual Explorer"],
+    index=0,
+)
+
+
+# =============================================================
+# DASHBOARD PAGE
+# =============================================================
+if menu == "🏠 Dashboard":
+    st.markdown('<div class="main-header">Outlier Scouting Platform</div>', unsafe_allow_html=True)
     st.markdown(
-        """
-Welcome to the **Outlier Scouting Platform**.
-
-Use the navigation on the left to:
-
-- **📊 Outlier Scouting** – filter by team, minutes, position, and outlier scores.
-- **👤 Player Explorer** – inspect an individual player in detail (including radar chart).
-- **📈 Visual Explorer** – see scatter plots & distributions to spot outliers visually.
-"""
+        '<div class="main-subheader">American Soccer Analysis–style scouting environment for quickly finding statistical outliers.</div>',
+        unsafe_allow_html=True,
     )
 
-    st.subheader("Dataset Overview")
-    st.write(f"Total players in dataset: **{len(df)}**")
-    st.dataframe(df.head(20), use_container_width=True, hide_index=True)
+    # Top-level cards
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown('<div class="metric-label">Players</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="metric-value-lg">{len(df)}</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.subheader("Score Distributions (Offensive / Defensive / Key Passing)")
+    with c2:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown('<div class="metric-label">Teams</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="metric-value-lg">{df["Team"].nunique()}</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c3:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown('<div class="metric-label">Median Minutes</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="metric-value-lg">{int(df["Minutes played"].median())}</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c4:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown('<div class="metric-label">Positions</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="metric-value-lg">{df["Position"].nunique()}</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('<div class="section-title">Score Distributions</div>', unsafe_allow_html=True)
+
     cols = ["Offensive Score", "Defensive Score", "Key Passing Score"]
     fig, axes = plt.subplots(1, 3, figsize=(12, 3))
     for ax, col in zip(axes, cols):
         ax.hist(df[col].fillna(0), bins=20)
         ax.set_title(col)
+        ax.grid(alpha=0.3)
     st.pyplot(fig)
 
+    st.markdown('<div class="section-title">Sample of Player Data</div>', unsafe_allow_html=True)
+    st.dataframe(df.head(20), use_container_width=True, hide_index=True)
+
 
 # =============================================================
-# PAGE: OUTLIER SCOUTING
+# OUTLIER SCOUTING PAGE
 # =============================================================
-elif page == "📊 Outlier Scouting":
-    st.header("📊 Outlier Scouting")
+elif menu == "📊 Outlier Scouting":
+    st.markdown('<div class="main-header">Outlier Scouting</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="main-subheader">Filter by minutes, team, position and composite scores to surface statistical outliers.</div>',
+        unsafe_allow_html=True,
+    )
 
     filtered = filter_panel(df)
 
-    st.sidebar.header("Outlier Score Thresholds")
+    st.sidebar.markdown('<div class="sidebar-subtitle">Score thresholds</div>', unsafe_allow_html=True)
 
-    min_off = st.sidebar.slider(
-        "Min Offensive Score", 0.0, 100.0, 0.0, step=1.0
-    )
-    min_def = st.sidebar.slider(
-        "Min Defensive Score", 0.0, 100.0, 0.0, step=1.0
-    )
-    min_key = st.sidebar.slider(
-        "Min Key Passing Score", 0.0, 100.0, 0.0, step=1.0
-    )
+    min_off = st.sidebar.slider("Min Offensive Score", 0.0, 100.0, 0.0, step=1.0)
+    min_def = st.sidebar.slider("Min Defensive Score", 0.0, 100.0, 0.0, step=1.0)
+    min_key = st.sidebar.slider("Min Key Passing Score", 0.0, 100.0, 0.0, step=1.0)
 
     filtered = filtered[
         (filtered["Offensive Score"] >= min_off)
@@ -239,93 +363,127 @@ elif page == "📊 Outlier Scouting":
         & (filtered["Key Passing Score"] >= min_key)
     ]
 
-    st.subheader("Filtered Players")
+    st.markdown('<div class="section-title">Filtered Players</div>', unsafe_allow_html=True)
 
-    columns_to_show = [
+    cols_to_show = [
         "Player", "Team", "Team within selected timeframe", "Position",
-        "Minutes played",
-        "Offensive Score", "Defensive Score", "Key Passing Score",
+        "Minutes played", "Offensive Score", "Defensive Score", "Key Passing Score",
     ]
-    columns_to_show = [c for c in columns_to_show if c in filtered.columns]
+    cols_to_show = [c for c in cols_to_show if c in filtered.columns]
 
     st.dataframe(
-        filtered[columns_to_show].sort_values("Offensive Score", ascending=False),
+        filtered[cols_to_show].sort_values("Offensive Score", ascending=False),
         use_container_width=True,
         hide_index=True,
     )
     st.write(f"**Players found:** {len(filtered)}")
 
-    # Tabs: lists of top outliers in each category
-    st.subheader("Top Outliers by Composite Score")
-
+    st.markdown('<div class="section-title">Top Outliers by Composite Score</div>', unsafe_allow_html=True)
     tab1, tab2, tab3 = st.tabs(["🔥 Offensive", "🛡 Defensive", "🎯 Key Passing"])
 
+    base_cols = cols_to_show
+
     with tab1:
-        st.write("Top 15 Offensive Outliers")
+        st.write("Top 15 offensive outliers in full dataset")
         st.dataframe(
-            df.sort_values("Offensive Score", ascending=False).head(15)[columns_to_show],
-            use_container_width=True, hide_index=True
+            df.sort_values("Offensive Score", ascending=False).head(15)[base_cols],
+            use_container_width=True,
+            hide_index=True,
         )
 
     with tab2:
-        st.write("Top 15 Defensive Outliers")
+        st.write("Top 15 defensive outliers in full dataset")
         st.dataframe(
-            df.sort_values("Defensive Score", ascending=False).head(15)[columns_to_show],
-            use_container_width=True, hide_index=True
+            df.sort_values("Defensive Score", ascending=False).head(15)[base_cols],
+            use_container_width=True,
+            hide_index=True,
         )
 
     with tab3:
-        st.write("Top 15 Key Passing Outliers")
+        st.write("Top 15 key passing outliers in full dataset")
         st.dataframe(
-            df.sort_values("Key Passing Score", ascending=False).head(15)[columns_to_show],
-            use_container_width=True, hide_index=True
+            df.sort_values("Key Passing Score", ascending=False).head(15)[base_cols],
+            use_container_width=True,
+            hide_index=True,
         )
 
 
 # =============================================================
-# PAGE: PLAYER EXPLORER
+# PLAYER EXPLORER PAGE
 # =============================================================
-elif page == "👤 Player Explorer":
-    st.header("👤 Player Explorer")
+elif menu == "👤 Player Explorer":
+    st.markdown('<div class="main-header">Player Explorer</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="main-subheader">Dive into an individual player with composite scores, radar visual, and key metrics.</div>',
+        unsafe_allow_html=True,
+    )
 
     filtered = filter_panel(df)
 
     if len(filtered) == 0:
         st.warning("No players match the current filters.")
     else:
-        # choose player from filtered list
-        player_name = st.selectbox("Select Player", sorted(filtered["Player"].unique()))
-
+        player_name = st.selectbox("Select player", sorted(filtered["Player"].unique()))
         player_row = filtered[filtered["Player"] == player_name].iloc[0]
 
-        st.subheader(f"{player_name} – Summary")
-
-        colA, colB = st.columns(2)
+        # Top section: bio + scores
+        colA, colB = st.columns([1.1, 1])
 
         with colA:
-            st.markdown("**Bio / Context**")
-            st.write(f"**Team:** {player_row['Team']}")
-            st.write(f"**Team (selected timeframe):** {player_row['Team within selected timeframe']}")
-            st.write(f"**Position:** {player_row['Position']}")
-            st.write(f"**Minutes played:** {int(player_row['Minutes played'])}")
+            st.markdown('<div class="section-title">Profile</div>', unsafe_allow_html=True)
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='metric-value-lg'>{player_name}</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"<div class='metric-value-sm'>{player_row['Team']} – {player_row['Position']}</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"<div class='metric-label'>Minutes played</div><div class='metric-value-sm'>{int(player_row['Minutes played'])}</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
 
-            st.write("**Composite Scores**")
-            st.write(f"Offensive Score: `{player_row['Offensive Score']:.1f}`")
-            st.write(f"Defensive Score: `{player_row['Defensive Score']:.1f}`")
-            st.write(f"Key Passing Score: `{player_row['Key Passing Score']:.1f}`")
+            # Composite score cards
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                st.markdown('<div class="metric-label">Offensive score</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='metric-value-lg'>{player_row['Offensive Score']:.1f}</div>",
+                    unsafe_allow_html=True,
+                )
+                st.markdown("</div>", unsafe_allow_html=True)
+            with c2:
+                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                st.markdown('<div class="metric-label">Defensive score</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='metric-value-lg'>{player_row['Defensive Score']:.1f}</div>",
+                    unsafe_allow_html=True,
+                )
+                st.markdown("</div>", unsafe_allow_html=True)
+            with c3:
+                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                st.markdown('<div class="metric-label">Key passing score</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='metric-value-lg'>{player_row['Key Passing Score']:.1f}</div>",
+                    unsafe_allow_html=True,
+                )
+                st.markdown("</div>", unsafe_allow_html=True)
 
         with colB:
-            st.markdown("**Radar – Outlier Profile**")
-
+            st.markdown('<div class="section-title">Outlier radar</div>', unsafe_allow_html=True)
             radar_metrics = {
                 "Offense": "Offensive Score",
                 "Defense": "Defensive Score",
                 "Key Pass": "Key Passing Score",
             }
-            radar_chart(player_row, radar_metrics, title="Composite Outlier Scores")
+            radar_chart(player_row, radar_metrics, title="Composite percentile profile")
 
-        st.subheader("Detailed Numbers (Key Metrics)")
-
+        # Key metrics table
+        st.markdown('<div class="section-title">Key metrics</div>', unsafe_allow_html=True)
         metric_cols = [
             "Goals per 90", "xG per 90", "Shots per 90",
             "Assists per 90", "xA per 90",
@@ -347,106 +505,97 @@ elif page == "👤 Player Explorer":
 
 
 # =============================================================
-# PAGE: VISUAL EXPLORER
+# VISUAL EXPLORER PAGE
 # =============================================================
-elif page == "📈 Visual Explorer":
-    st.header("📈 Visual Explorer")
+elif menu == "📈 Visual Explorer":
+    st.markdown('<div class="main-header">Visual Explorer</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="main-subheader">Use scatter plots and distributions to visually spot statistical outliers.</div>',
+        unsafe_allow_html=True,
+    )
 
     filtered = filter_panel(df)
 
     if len(filtered) == 0:
         st.warning("No players match the current filters.")
-        st.stop()
+    else:
+        tab_scatter, tab_dist = st.tabs(["Scatter outliers", "Distributions & boxplots"])
 
-    tab_scatter, tab_dist = st.tabs(["Scatter Outliers", "Distributions / Boxplots"])
+        # --------------- SCATTER TAB ---------------
+        with tab_scatter:
+            st.markdown('<div class="section-title">Scatter views</div>', unsafe_allow_html=True)
 
-    # ---------------- SCATTER TAB ----------------
-    with tab_scatter:
-        st.subheader("Scatter Plots for Outlier Detection")
+            scatter_type = st.selectbox(
+                "Scatter type",
+                [
+                    "Offense: Goals per 90 vs xG per 90",
+                    "Defense: PAdj Interceptions vs Shots blocked per 90",
+                    "Key passing: Key passes per 90 vs Passes to penalty area per 90",
+                ],
+            )
 
-        plot_type = st.selectbox(
-            "Choose scatter",
-            [
-                "Offense: Goals per 90 vs xG per 90",
-                "Defense: PAdj Interceptions vs Shots blocked per 90",
-                "Key Passing: Key passes per 90 vs Passes to penalty area per 90",
-            ],
-        )
+            fig, ax = plt.subplots(figsize=(6, 5))
 
-        fig, ax = plt.subplots(figsize=(6, 5))
+            if scatter_type.startswith("Offense"):
+                xcol, ycol = "xG per 90", "Goals per 90"
+                scores = filtered["Offensive Score"]
+                ax.set_title("Offensive outliers")
+            elif scatter_type.startswith("Defense"):
+                xcol, ycol = "PAdj Interceptions", "Shots blocked per 90"
+                scores = filtered["Defensive Score"]
+                ax.set_title("Defensive outliers")
+            else:
+                xcol, ycol = "Key passes per 90", "Passes to penalty area per 90"
+                scores = filtered["Key Passing Score"]
+                ax.set_title("Key passing outliers")
 
-        if plot_type == "Offense: Goals per 90 vs xG per 90":
-            xcol = "xG per 90"
-            ycol = "Goals per 90"
-            color = filtered["Offensive Score"]
+            sc = ax.scatter(filtered[xcol], filtered[ycol], c=scores, alpha=0.85)
             ax.set_xlabel(xcol)
             ax.set_ylabel(ycol)
-            sc = ax.scatter(filtered[xcol], filtered[ycol], c=color, cmap="viridis")
-            ax.set_title("Offensive Outliers")
-            cb = plt.colorbar(sc, ax=ax)
-            cb.set_label("Offensive Score")
-
-        elif plot_type == "Defense: PAdj Interceptions vs Shots blocked per 90":
-            xcol = "PAdj Interceptions"
-            ycol = "Shots blocked per 90"
-            color = filtered["Defensive Score"]
-            ax.set_xlabel(xcol)
-            ax.set_ylabel(ycol)
-            sc = ax.scatter(filtered[xcol], filtered[ycol], c=color, cmap="plasma")
-            ax.set_title("Defensive Outliers")
-            cb = plt.colorbar(sc, ax=ax)
-            cb.set_label("Defensive Score")
-
-        else:  # Key Passing
-            xcol = "Key passes per 90"
-            ycol = "Passes to penalty area per 90"
-            color = filtered["Key Passing Score"]
-            ax.set_xlabel(xcol)
-            ax.set_ylabel(ycol)
-            sc = ax.scatter(filtered[xcol], filtered[ycol], c=color, cmap="magma")
-            ax.set_title("Key Passing Outliers")
-            cb = plt.colorbar(sc, ax=ax)
-            cb.set_label("Key Passing Score")
-
-        st.pyplot(fig)
-
-    # ---------------- DISTRIBUTION TAB ----------------
-    with tab_dist:
-        st.subheader("Metric Distributions & Boxplots")
-
-        metric = st.selectbox(
-            "Select metric",
-            [
-                "Goals per 90",
-                "xG per 90",
-                "Shots per 90",
-                "Assists per 90",
-                "xA per 90",
-                "PAdj Interceptions",
-                "PAdj Sliding tackles",
-                "Aerial duels won, %",
-                "Defensive duels won, %",
-                "Shots blocked per 90",
-                "Key passes per 90",
-                "Through passes per 90",
-                "Passes to final third per 90",
-                "Passes to penalty area per 90",
-            ],
-        )
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.write(f"Distribution of **{metric}**")
-            fig, ax = plt.subplots(figsize=(5, 4))
-            ax.hist(filtered[metric].dropna(), bins=20)
-            ax.set_xlabel(metric)
-            ax.set_ylabel("Count")
+            ax.grid(alpha=0.3)
+            cbar = plt.colorbar(sc, ax=ax)
+            cbar.set_label("Composite score")
             st.pyplot(fig)
 
-        with col2:
-            st.write(f"Boxplot of **{metric}** (detect extremes)")
-            fig, ax = plt.subplots(figsize=(3, 4))
-            ax.boxplot(filtered[metric].dropna(), vert=True)
-            ax.set_ylabel(metric)
-            st.pyplot(fig)
+        # --------------- DISTRIBUTION TAB ---------------
+        with tab_dist:
+            st.markdown('<div class="section-title">Distributions & boxplots</div>', unsafe_allow_html=True)
+
+            metric = st.selectbox(
+                "Select metric",
+                [
+                    "Goals per 90",
+                    "xG per 90",
+                    "Shots per 90",
+                    "Assists per 90",
+                    "xA per 90",
+                    "PAdj Interceptions",
+                    "PAdj Sliding tackles",
+                    "Aerial duels won, %",
+                    "Defensive duels won, %",
+                    "Shots blocked per 90",
+                    "Key passes per 90",
+                    "Through passes per 90",
+                    "Passes to final third per 90",
+                    "Passes to penalty area per 90",
+                ],
+            )
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+                st.markdown(f"**Distribution – {metric}**")
+                fig, ax = plt.subplots(figsize=(5, 4))
+                ax.hist(filtered[metric].dropna(), bins=20)
+                ax.set_xlabel(metric)
+                ax.set_ylabel("Count")
+                ax.grid(alpha=0.3)
+                st.pyplot(fig)
+
+            with c2:
+                st.markdown(f"**Boxplot – {metric}**")
+                fig, ax = plt.subplots(figsize=(3, 4))
+                ax.boxplot(filtered[metric].dropna(), vert=True)
+                ax.set_ylabel(metric)
+                ax.grid(alpha=0.3)
+                st.pyplot(fig)
