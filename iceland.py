@@ -23,14 +23,7 @@ run_button = st.button("Generate Profile")
 st.set_page_config(layout="wide", page_title="Player Profile Generator")
 st.title("Player Profile Generator")
 
-uploaded_file = st.file_uploader("Upload NWSL 2025 Excel File", type=["xlsx"])
-player_name = st.text_input("Player Name")
-position_group = st.selectbox(
-    "Select Position Group",
-    ['Centre-back', 'Full-back', 'Midfielder', 'Attacking Midfielder', 'Attacker']
-)
 
-run_button = st.button("Generate Profile")
 
 # ------------------- Function -------------------
 def generate_player_profile(df, player_name, position_group):
