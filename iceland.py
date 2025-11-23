@@ -7,17 +7,21 @@ from sklearn.metrics.pairwise import cosine_similarity
 import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
 
-# ---------------------- PAGE CONFIG ----------------------
+# ============================================================
+# PAGE SETUP
+# ============================================================
 st.set_page_config(layout="wide", page_title="Player Profile Generator")
 
-# ---------------------- LOAD DATA ------------------------
+# ============================================================
+# LOAD DATA
+# ============================================================
 file_path = "Iceland.xlsx"
 df = pd.read_excel(file_path)
 
-# ---------------------- TITLE ----------------------------
+# ============================================================
+# SIDEBAR
+# ============================================================
 st.title("Player Profile Generator")
-
-# ---------------------- SIDEBAR FILTERS ------------------
 st.sidebar.header("Filters")
 
 teams = sorted(df["Team"].dropna().unique())
@@ -34,7 +38,9 @@ position_group = st.sidebar.selectbox(
 run_button = st.sidebar.button("Generate Profile")
 
 
-# ---------------------- GROUP DEFINITIONS ----------------
+# ============================================================
+# GROUP DEFINITIONS
+# ============================================================
 groups = {}
 
 groups['Centre-back'] = (
@@ -149,8 +155,11 @@ groups['Attacker'] = (
 )
 
 
-# ---------------------- GENERATE PROFILE FUNCTION ----------------
+# ============================================================
+# GENERATE PLAYER PROFILE (FINAL — CLEAN — SAFE)
+# ============================================================
 def generate_player_profile(df, player_name, position_group):
+
     df = df.copy()
     df.rename(columns={"Nationality": "Passport country"}, inplace=True)
 
@@ -159,37 +168,45 @@ def generate_player_profile(df, player_name, position_group):
     # ---------------- FILTER PLAYER ----------------
     player_row_original = df[df["Player"] == player_name].iloc[0]
 
-    # ---------------- CALCULATE CATEGORY PERCENTILES ----------------
+    # ---------------- COMPUTE CATEGORY PERCENTILES ----------------
     data = df.copy()
 
     for cat, metrics in categories.items():
         pct_cols = []
         for metric in metrics:
             if metric in data.columns:
-                data[f"{metric}_z"] = zscore(data[metric].astype(float))
-                data[f"{metric}_pct"] = data[f"{metric}_z"].apply(lambda x: norm.cdf(x) * 100)
-                pct_cols.append(f"{metric}_pct")
+                try:
+                    col = data[metric].astype(float)
+                    data[f"{metric}_z"] = zscore(col)
+                    data[f"{metric}_pct"] = data[f"{metric}_z"].apply(lambda x: norm.cdf(x) * 100)
+                    pct_cols.append(f"{metric}_pct")
+                except:
+                    continue
         if pct_cols:
             data[f"{cat}_percentile"] = data[pct_cols].mean(axis=1)
 
     # ---------------- ROLE SCORES ----------------
     for role, cat_list in roles.items():
-        cat_pcts = [f"{c}_percentile" for c in cat_list if f"{c}_percentile" in data.columns]
-        if cat_pcts:
-            data[role] = data[cat_pcts].mean(axis=1)
+        cols = [f"{c}_percentile" for c in cat_list if f"{c}_percentile" in data.columns]
+        if cols:
+            data[role] = data[cols].mean(axis=1)
 
     # ---------------- OVERALL RATING ----------------
-    category_percentile_cols = [f"{cat}_percentile" for cat in categories if f"{cat}_percentile" in data.columns]
+    category_percentile_cols = [
+        f"{cat}_percentile"
+        for cat in categories
+        if f"{cat}_percentile" in data.columns
+    ]
 
     if category_percentile_cols:
         data["Overall_mean"] = data[category_percentile_cols].mean(axis=1)
         data["Overall_z"] = zscore(data["Overall_mean"])
         data["Overall_percentile"] = data["Overall_z"].apply(lambda x: norm.cdf(x) * 100)
-        avg_rating = data.loc[data["Player"] == player_name, "Overall_percentile"].values[0]
+        avg_rating = float(data.loc[data["Player"] == player_name, "Overall_percentile"].values[0])
     else:
         avg_rating = np.nan
 
-    # Retrieve processed player row
+    # Re-fetch processed row
     player_row = data[data["Player"] == player_name].iloc[0]
 
     # ---------------- PREP VISUAL DATA ----------------
@@ -202,31 +219,36 @@ def generate_player_profile(df, player_name, position_group):
     cat_percentiles = {
         cat: player_row.get(f"{cat}_percentile", 0)
         for cat in categories
-        if not pd.isna(player_row.get(f"{cat}_percentile", None))
+        if f"{cat}_percentile" in data.columns
     }
 
     role_scores = {role: player_row.get(role, 0) for role in roles}
     top_roles = sorted(role_scores.items(), key=lambda x: x[1], reverse=True)[:3]
 
-    # ---------------- SIMILAR PLAYERS (FIXED FOR NAN) ----------------
+    # ---------------- SIMILAR PLAYERS (COMPLETE NAN SAFE) ----------------
     category_cols = [col for col in category_percentile_cols if col in data.columns]
 
-    # Fill NaNs with column means
-    data[category_cols] = data[category_cols].fillna(data[category_cols].mean())
+    if len(category_cols) == 0:
+        top_similar = pd.DataFrame(columns=["Player", "Team", "Similarity"])
+    else:
+        # Clean data
+        for col in category_cols:
+            data[col] = data[col].astype(float).fillna(data[col].mean())
 
-    # Player vector
-    player_vector = player_row[category_cols].values.astype(float)
-    player_vector = np.nan_to_num(player_vector, nan=np.nanmean(player_vector))
-    player_vector = player_vector.reshape(1, -1)
+        # Clean player vector
+        player_vector = player_row[category_cols].astype(float).values
+        player_vector = np.nan_to_num(player_vector, nan=np.nanmean(player_vector)).reshape(1, -1)
 
-    all_vectors = data[category_cols].values.astype(float)
+        # Clean all vectors
+        all_vectors = data[category_cols].astype(float).values
+        all_vectors = np.nan_to_num(all_vectors, nan=np.nanmean(all_vectors))
 
-    similarities = cosine_similarity(player_vector, all_vectors).flatten()
+        similarities = cosine_similarity(player_vector, all_vectors).flatten()
 
-    sim_df = data.copy()
-    sim_df["Similarity"] = similarities
-    sim_df = sim_df[sim_df["Player"] != player_name]
-    top_similar = sim_df.sort_values("Similarity", ascending=False).head(4)
+        sim_df = data.copy()
+        sim_df["Similarity"] = similarities
+        sim_df = sim_df[sim_df["Player"] != player_name]
+        top_similar = sim_df.sort_values("Similarity", ascending=False).head(4)
 
     # ---------------- VISUAL ----------------
     fig = plt.figure(figsize=(11, 7), dpi=150)
@@ -234,103 +256,77 @@ def generate_player_profile(df, player_name, position_group):
 
     fig.text(0.05, 0.93, player_name, fontsize=24, weight="bold")
 
-    # Biography
+    # BIO
     fig.text(0.05, 0.88, "Biography", fontsize=14, weight="bold")
-    bio_text = (
+    bio = (
         f"Age: {age}\n"
         f"Position: {position}\n"
         f"Team: {team}\n"
         f"Passport country: {nation}\n"
         f"Minutes: {int(minutes)}"
     )
-    fig.text(0.05, 0.85, bio_text, fontsize=11, va="top", linespacing=1.5)
+    fig.text(0.05, 0.85, bio, fontsize=11, va="top", linespacing=1.5)
 
-    # Role score bars
+    # ROLE BARS
     x0, y0 = 0.55, 0.92
-    box_size = 0.012
+    box = 0.012
     for i, (role, score) in enumerate(sorted(role_scores.items(), key=lambda x: list(roles.keys()).index(x[0]))):
         fig.text(x0, y0 - i * 0.045, role, fontsize=10)
         for j in range(10):
             color = "gold" if j < round(score / 10) else "lightgrey"
-            rect = plt.Rectangle(
+            r = plt.Rectangle(
                 (x0 + 0.22 + j * 0.022, y0 - i * 0.045 - 0.005),
-                box_size, box_size,
-                transform=fig.transFigure,
-                facecolor=color, edgecolor="black", lw=0.3,
+                box, box, transform=fig.transFigure,
+                facecolor=color, edgecolor="black", lw=0.3
             )
-            fig.add_artist(rect)
+            fig.add_artist(r)
 
-    # Overall rating
+    # OVERALL TILE
     if not pd.isna(avg_rating):
-        rect = plt.Rectangle((0.33, 0.78), 0.10, 0.08, transform=fig.transFigure,
-                             facecolor="lightblue", edgecolor="black", lw=1)
-        fig.add_artist(rect)
+        r = plt.Rectangle((0.33, 0.78), 0.10, 0.08, transform=fig.transFigure,
+                          facecolor="lightblue", edgecolor="black", lw=1)
+        fig.add_artist(r)
         fig.text(0.335, 0.83, "Rating:", fontsize=10, weight="bold")
         fig.text(0.38, 0.795, f"{avg_rating:.1f}", fontsize=13, weight="bold")
 
-    # Top roles
-    tile_w, tile_h, tile_y = 0.14, 0.06, 0.64
+    # TOP ROLE TILES
+    w, h, y = 0.14, 0.06, 0.64
     for i, (role, score) in enumerate(top_roles):
-        tx = 0.05 + i * (tile_w + 0.025)
-        rect = plt.Rectangle((tx, tile_y), tile_w, tile_h, transform=fig.transFigure,
-                             facecolor="gold", edgecolor="black", lw=1)
-        fig.add_artist(rect)
-        fig.text(tx + 0.01, tile_y + tile_h / 2, role, fontsize=8, weight="bold",
-                 ha="left", va="center")
-        fig.text(tx + tile_w - 0.01, tile_y + tile_h / 2, f"{score:.0f}",
-                 fontsize=10, weight="bold", ha="right", va="center")
+        tx = 0.05 + i * (w + 0.025)
+        r = plt.Rectangle((tx, y), w, h, transform=fig.transFigure,
+                          facecolor="gold", edgecolor="black", lw=1)
+        fig.add_artist(r)
+        fig.text(tx + 0.01, y + h / 2, role, fontsize=8, weight="bold", va="center")
+        fig.text(tx + w - 0.01, y + h / 2, f"{score:.0f}", fontsize=10, weight="bold", ha="right", va="center")
 
-    # Category bars
-    ax_bar = fig.add_axes([0.05, 0.20, 0.9, 0.35])
-    bar_data = dict(sorted(cat_percentiles.items(), key=lambda x: x[1]))
-    bars = ax_bar.barh(list(bar_data.keys()), list(bar_data.values()),
-                       color="gold", edgecolor="black")
-    ax_bar.set_xlim(0, 100)
-    ax_bar.set_title("Positional Responsibilities", fontsize=12, weight="bold", loc="left")
-    ax_bar.grid(axis="x", linestyle="--", alpha=0.6)
-    for bar in bars:
-        w = bar.get_width()
-        ax_bar.text(w + 1, bar.get_y() + bar.get_height() / 2, f"{w:.1f}",
-                    va="center", fontsize=9)
+    # CATEGORY CHART
+    ax = fig.add_axes([0.05, 0.20, 0.9, 0.35])
+    vals = dict(sorted(cat_percentiles.items(), key=lambda x: x[1]))
+    bars = ax.barh(list(vals.keys()), list(vals.values()), color="gold", edgecolor="black")
+    ax.set_xlim(0, 100)
+    ax.set_title("Positional Responsibilities", fontsize=12, weight="bold")
+    ax.grid(axis="x", linestyle="--", alpha=0.6)
+    for b in bars:
+        w = b.get_width()
+        ax.text(w + 1, b.get_y() + b.get_height() / 2, f"{w:.1f}", va="center", fontsize=9)
 
-    # ---------------- 5. SIMILAR PLAYERS (100% NAN SAFE) ----------------
-category_cols = [col for col in category_percentile_cols if col in data.columns]
+    # SIMILAR PLAYERS
+    fig.text(0.05, 0.12, "Similar Player Profiles", fontsize=12, weight="bold")
+    for i, (_, row) in enumerate(top_similar.iterrows()):
+        tx = 0.05 + i * (0.22 + 0.02)
+        r = plt.Rectangle((tx, 0.02), 0.22, 0.08,
+                          transform=fig.transFigure,
+                          facecolor="lightgreen", edgecolor="black", lw=1)
+        fig.add_artist(r)
+        fig.text(tx + 0.01, 0.08, row["Player"], fontsize=10, weight="bold")
+        fig.text(tx + 0.01, 0.06, row["Team"], fontsize=9)
+        fig.text(tx + 0.01, 0.04, f"{row['Similarity']*100:.1f}% Similarity", fontsize=9)
 
-# If no columns exist (edge case), skip similarity computation entirely
-if len(category_cols) == 0:
-    top_similar = pd.DataFrame(columns=["Player", "Team", "Similarity"])
-else:
-    # Fill every NaN with column means (computed AFTER filtering)
-    data[category_cols] = data[category_cols].astype(float).apply(
-        lambda col: col.fillna(col.mean())
-    )
-
-    # Player vector (force fill remaining NaNs)
-    player_vector = player_row[category_cols].values.astype(float)
-    player_vector = np.nan_to_num(
-        player_vector,
-        nan=np.nanmean(player_vector[
-            ~np.isnan(player_vector)
-        ]) if np.isnan(player_vector).any() else player_vector.mean()
-    ).reshape(1, -1)
-
-    # All other vectors
-    all_vectors = data[category_cols].values.astype(float)
-    all_vectors = np.nan_to_num(all_vectors, nan=np.nanmean(all_vectors))
-
-    # Final similarity calculation
-    similarities = cosine_similarity(player_vector, all_vectors).flatten()
-
-    sim_df = data.copy()
-    sim_df["Similarity"] = similarities
-    sim_df = sim_df[sim_df["Player"] != player_name]
-    top_similar = sim_df.sort_values("Similarity", ascending=False).head(4)
-
-
-    # Streamlit output
     st.pyplot(fig)
 
 
-# ---------------------- RUN APP ----------------------
+# ============================================================
+# RUN APP
+# ============================================================
 if run_button:
     generate_player_profile(df, selected_player, position_group)
