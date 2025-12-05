@@ -29,7 +29,7 @@ st.markdown("""
 /* Sidebar */
 [data-testid="stSidebar"] {
     background-color: #0A0A0A !important;
-    border-right: 1px solid var(--border);
+    border-right: 1px solid var(--border) !important;
 }
 
 [data-testid="stSidebar"] * {
@@ -46,7 +46,7 @@ st.markdown("""
     margin-top: 1.4rem;
 }
 
-h1, h2, h3, h4, h5 {
+h1, h2, h3, h4, h5, h6 {
     color: var(--text) !important;
 }
 
@@ -96,27 +96,29 @@ svg text { fill: var(--text) !important; }
 
 
 # =============================================================
-# LOAD DATA
+# LOAD + CLEAN DATA
 # =============================================================
 DATA_PATH = "Iceland.xlsx"
-df_raw = pd.read_excel(DATA_PATH)
-df = df_raw.copy()
+df = pd.read_excel(DATA_PATH).copy()
 
-required_cols = [
-    "Player", "Team", "Position", "Minutes played",
+# Columns needed for scoring
+score_columns = [
     "Goals per 90", "xG per 90", "Shots per 90",
     "Assists per 90", "xA per 90",
     "PAdj Interceptions", "PAdj Sliding tackles",
     "Aerial duels won, %", "Defensive duels won, %",
     "Shots blocked per 90",
     "Key passes per 90", "Through passes per 90",
-    "Passes to final third per 90", "Passes to penalty area per 90"
+    "Passes to final third per 90", "Passes to penalty area per 90",
 ]
 
-missing = [c for c in required_cols if c not in df.columns]
-if missing:
-    st.error(f"Missing required columns: {missing}")
-    st.stop()
+# Convert to numeric & fix invalid data
+for col in score_columns:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
+df = df[df["Player"].notna()]  # remove empty rows
 
 
 # =============================================================
@@ -125,12 +127,13 @@ if missing:
 def percentile(series):
     return series.rank(pct=True) * 100
 
-def add_outlier_scores(df):
+def add_scores(df):
     df = df.copy()
 
     offensive = ["Goals per 90","xG per 90","Shots per 90","Assists per 90","xA per 90"]
     defensive = ["PAdj Interceptions","PAdj Sliding tackles","Aerial duels won, %","Defensive duels won, %","Shots blocked per 90"]
-    keypass = ["Key passes per 90","Through passes per 90","Assists per 90","xA per 90","Passes to final third per 90","Passes to penalty area per 90"]
+    keypass = ["Key passes per 90","Through passes per 90","Assists per 90","xA per 90",
+               "Passes to final third per 90","Passes to penalty area per 90"]
 
     df["Offensive Score"] = percentile(df[offensive].mean(axis=1))
     df["Defensive Score"] = percentile(df[defensive].mean(axis=1))
@@ -138,32 +141,32 @@ def add_outlier_scores(df):
 
     return df
 
-df = add_outlier_scores(df)
+df = add_scores(df)
 
 
 # =============================================================
-# FILTER PANEL (SIDEBAR)
+# FILTERS (SIDEBAR)
 # =============================================================
 def filters(df):
-    st.sidebar.markdown("### Filters")
+    st.sidebar.markdown("## Filters")
 
     # Search
     search = st.sidebar.text_input("Search Player")
 
     # Team
-    teams = ["All"] + sorted(df["Team"].unique())
+    teams = ["All"] + sorted(df["Team"].dropna().unique())
     team = st.sidebar.selectbox("Team", teams)
 
     # Position
-    positions = sorted(df["Position"].unique())
+    positions = sorted(df["Position"].dropna().unique())
     pos = st.sidebar.multiselect("Position", positions, positions)
 
     # Minutes
     min_m, max_m = int(df["Minutes played"].min()), int(df["Minutes played"].max())
     mins = st.sidebar.slider("Minutes Played", min_m, max_m, (min_m, max_m))
 
-    # Scores
-    st.sidebar.markdown("### Score Filters")
+    # Composite score sliders
+    st.sidebar.markdown("## Score Filters")
     off = st.sidebar.slider("Min Offensive Score", 0, 100, 0)
     deff = st.sidebar.slider("Min Defensive Score", 0, 100, 0)
     keyp = st.sidebar.slider("Min Key Passing Score", 0, 100, 0)
@@ -188,45 +191,55 @@ def filters(df):
 
 
 # =============================================================
-# RESULTS PANEL (MAIN)
+# RESULTS (MAIN AREA)
 # =============================================================
 def results(df_f):
     st.markdown("## FiveThirtyEight Scouting – Dark Mode")
 
-    # Summary metrics
+    # Summary metric cards
     c1, c2, c3 = st.columns(3)
 
     with c1:
-        st.markdown('<div class="result-card"><div class="result-title">Players</div>'
-                    f'<div class="result-value">{len(df_f)}</div></div>', 
-                    unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="result-card">
+            <div class="result-title">Players</div>
+            <div class="result-value">{len(df_f)}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with c2:
-        st.markdown('<div class="result-card"><div class="result-title">Avg Offensive</div>'
-                    f'<div class="result-value">{df_f["Offensive Score"].mean():.1f}</div></div>', 
-                    unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="result-card">
+            <div class="result-title">Avg Offensive</div>
+            <div class="result-value">{df_f["Offensive Score"].mean():.1f}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with c3:
-        st.markdown('<div class="result-card"><div class="result-title">Avg Defensive</div>'
-                    f'<div class="result-value">{df_f["Defensive Score"].mean():.1f}</div></div>', 
-                    unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="result-card">
+            <div class="result-title">Avg Defensive</div>
+            <div class="result-value">{df_f["Defensive Score"].mean():.1f}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
+    # Players table
     st.markdown('<div class="section-title">Players</div>', unsafe_allow_html=True)
 
-    columns = [
+    cols = [
         "Player", "Team", "Position", "Minutes played",
         "Offensive Score", "Defensive Score", "Key Passing Score"
     ]
 
     st.dataframe(
-        df_f[columns].sort_values("Offensive Score", ascending=False),
+        df_f[cols].sort_values("Offensive Score", ascending=False),
         use_container_width=True,
         hide_index=True,
     )
 
 
 # =============================================================
-# MAIN
+# MAIN EXECUTION
 # =============================================================
 df_filtered = filters(df)
 
