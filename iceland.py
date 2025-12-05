@@ -16,7 +16,7 @@ from mplsoccer import PyPizza
 st.set_page_config(page_title="Professional Scouting Platform", layout="wide")
 
 # =============================================================
-# PREMIUM TIGHT DARK THEME
+# PREMIUM DARK THEME (TIGHT)
 # =============================================================
 st.markdown("""
 <style>
@@ -31,7 +31,6 @@ html, body, [data-testid="stAppViewContainer"] {
     background-color: #0A0A0A !important;
     border-right: 1px solid #222 !important;
 }
-
 [data-testid="stSidebar"] * {
     color: #EEE !important;
     font-size: 0.85rem !important;
@@ -78,7 +77,7 @@ html, body, [data-testid="stAppViewContainer"] {
 """, unsafe_allow_html=True)
 
 # =============================================================
-# SAFETY WRAPPER FOR PLAYERS
+# SAFE PLAYER LOOKUP
 # =============================================================
 def safe_get_player(df, name):
     sub = df[df["Player"] == name]
@@ -87,43 +86,41 @@ def safe_get_player(df, name):
 # =============================================================
 # LOAD DATA
 # =============================================================
-df = pd.read_excel("Iceland.xlsx")
+df = pd.read_excel("Iceland.xlsx").copy()
+
 df["Team"] = df["Team"].astype(str)
 df["Position"] = df["Position"].astype(str)
 
-# Numeric cleaning
 numeric_cols = [
-    "Goals per 90", "xG per 90", "Shots per 90", "Assists per 90",
-    "xA per 90", "PAdj Interceptions", "PAdj Sliding tackles",
-    "Aerial duels won, %", "Defensive duels won, %", "Shots blocked per 90",
+    "Goals per 90", "xG per 90", "Shots per 90",
+    "Assists per 90", "xA per 90",
+    "PAdj Interceptions", "PAdj Sliding tackles",
+    "Aerial duels won, %", "Defensive duels won, %",
+    "Shots blocked per 90",
     "Key passes per 90", "Through passes per 90",
     "Passes to final third per 90", "Passes to penalty area per 90"
 ]
 
-for col in numeric_cols:
-    df[col] = pd.to_numeric(df[col], errors="coerce")
+for c in numeric_cols:
+    df[c] = pd.to_numeric(df[c], errors="coerce")
 
 df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
 df = df[df["Player"].notna()]
 
 # =============================================================
-# SCORING
+# SCORING FUNCTIONS
 # =============================================================
 def pct(s): return s.rank(pct=True) * 100
 
-df["Offensive Score"] = pct(df[[
-    "Goals per 90", "xG per 90", "Shots per 90", "Assists per 90", "xA per 90"
-]].mean(axis=1))
-
-df["Defensive Score"] = pct(df[[
-    "PAdj Interceptions", "PAdj Sliding tackles", "Aerial duels won, %",
-    "Defensive duels won, %", "Shots blocked per 90"
-]].mean(axis=1))
-
-df["Key Passing Score"] = pct(df[[
-    "Key passes per 90", "Through passes per 90", "Assists per 90", "xA per 90",
-    "Passes to final third per 90", "Passes to penalty area per 90"
-]].mean(axis=1))
+df["Offensive Score"] = pct(
+    df[["Goals per 90","xG per 90","Shots per 90","Assists per 90","xA per 90"]].mean(axis=1)
+)
+df["Defensive Score"] = pct(
+    df[["PAdj Interceptions","PAdj Sliding tackles","Aerial duels won, %","Defensive duels won, %","Shots blocked per 90"]].mean(axis=1)
+)
+df["Key Passing Score"] = pct(
+    df[["Key passes per 90","Through passes per 90","Assists per 90","xA per 90","Passes to final third per 90","Passes to penalty area per 90"]].mean(axis=1)
+)
 
 # =============================================================
 # PLAYER RADAR
@@ -135,14 +132,15 @@ def show_profile(row):
     vals = [
         row["Offensive Score"],
         row["Defensive Score"],
-        row["Key Passing Score"]
+        row["Key Passing Score"],
     ]
     vals += vals[:1]
+
     labels = ["Off", "Def", "Key"]
     ang = np.linspace(0, 2*np.pi, len(labels), endpoint=False).tolist()
     ang += ang[:1]
 
-    fig, ax = plt.subplots(figsize=(4,4), subplot_kw=dict(polar=True), facecolor="#000")
+    fig, ax = plt.subplots(figsize=(4,4), subplot_kw={'polar':True}, facecolor="#000")
     ax.set_facecolor("#000")
     ax.plot(ang, vals, color="#FF5C35", linewidth=2)
     ax.fill(ang, vals, color="#FF5C35", alpha=0.25)
@@ -157,26 +155,35 @@ def show_profile(row):
 def assign_roles(df_roles, cols, km):
     cen = pd.DataFrame(km.cluster_centers_, columns=cols)
     names = []
+
     for _, c in cen.iterrows():
-        if c["Offensive Score"] > c["Key Passing Score"] and c["Offensive Score"] > c["Defensive Score"]:
-            names.append("Attacking Forward")
-        elif c["Key Passing Score"] > c["Offensive Score"]:
-            names.append("Advanced Creator")
-        elif c["Defensive Score"] > 65:
-            names.append("Defensive Anchor")
-        elif c.mean() > 70:
-            names.append("Elite All-Rounder")
+        off, deff, kp = c["Offensive Score"], c["Defensive Score"], c["Key Passing Score"]
+
+        if off > kp and off > deff:
+            rn = "Attacking Forward"
+        elif kp > off:
+            rn = "Advanced Creator"
+        elif deff > 65:
+            rn = "Defensive Anchor"
+        elif off > 60 and kp > 60:
+            rn = "Attacking Playmaker"
+        elif np.mean([off, deff, kp]) > 70:
+            rn = "Elite All-Rounder"
         else:
-            names.append("Hybrid Profile")
+            rn = "Hybrid Profile"
+
+        names.append(rn)
+
     df_roles["Role Name"] = df_roles["Role"].apply(lambda x: names[x])
     return df_roles
 
 # =============================================================
-# PIZZA CHART
+# PIZZA CHART GENERATOR
 # =============================================================
 def pizza(df_all, player, min_thresh=900):
     pool = df_all[df_all["Minutes played"] >= min_thresh]
     row = safe_get_player(pool, player)
+
     if row is None:
         st.error("Player unavailable under filters.")
         return
@@ -195,10 +202,10 @@ def pizza(df_all, player, min_thresh=900):
         perc = stats.percentileofscore(col, row[p])
         values.append(min(99, int(perc)))
 
-    colors = ["#598BAF"]*5 + ["#ffa600"]*4 + ["#ff6361"]*5
+    colors = ["#598BAF"]*5 + ["#ffa600"]*4 + ["#ff6361"]*5  # att / key / def
 
-    baker = PyPizza(params=params, straight_line_color="white",
-                    last_circle_lw=5, other_circle_lw=2, inner_circle_size=15)
+    baker = PyPizza(params=params, straight_line_color="white", last_circle_lw=5,
+                    other_circle_lw=2, inner_circle_size=15)
 
     fig, ax = baker.make_pizza(
         values, figsize=(10,10), slice_colors=colors,
@@ -206,12 +213,13 @@ def pizza(df_all, player, min_thresh=900):
         kwargs_params=dict(color="white", fontsize=10),
         kwargs_values=dict(color="white", fontsize=9),
     )
+
     fig.patch.set_facecolor("black")
     ax.set_facecolor("black")
 
-    fig.text(0.5,0.97, player, ha="center", size=22, weight="bold", color="white")
-    fig.text(0.5,0.94, f"{row['Team']} | {int(row['Minutes played'])} mins", 
-             ha="center", size=12, color="white")
+    fig.text(0.5, 0.97, player, ha="center", size=22, weight="bold", color="white")
+    fig.text(0.5, 0.94, f"{row['Team']} • {int(row['Minutes played'])} mins",
+             ha="center", size=11, color="white")
 
     st.pyplot(fig)
 
@@ -221,7 +229,7 @@ def pizza(df_all, player, min_thresh=900):
 with st.sidebar:
     st.header("Filters")
 
-    search = st.text_input("Search", "")
+    search = st.text_input("Search")
 
     teams = ["All"] + sorted(df["Team"].unique())
     team = st.selectbox("Team", teams)
@@ -229,11 +237,13 @@ with st.sidebar:
     positions = sorted(df["Position"].unique())
     pos_sel = st.multiselect("Positions", positions, positions)
 
-    mins = st.slider("Minutes", 0, int(df["Minutes played"].max()), (300, int(df["Minutes played"].max())))
+    mins = st.slider("Minutes Played", 0, int(df["Minutes played"].max()),
+                     (300, int(df["Minutes played"].max())))
 
-    min_off = st.slider("Min Offensive", 0, 100, 0)
-    min_def = st.slider("Min Defensive", 0, 100, 0)
-    min_key = st.slider("Min Key Passing", 0, 100, 0)
+    st.subheader("Score Filters")
+    min_off = st.slider("Offensive ≥", 0, 100, 0)
+    min_def = st.slider("Defensive ≥", 0, 100, 0)
+    min_key = st.slider("Key Passing ≥", 0, 100, 0)
 
 # APPLY FILTERS
 df_f = df.copy()
@@ -250,7 +260,7 @@ df_f = df_f[
 ]
 
 # =============================================================
-# TABS AS PRO BUTTONS
+# MAIN TABS (PRO NAVIGATION)
 # =============================================================
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Player Explorer",
@@ -262,7 +272,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # =============================================================
-# TAB 1 — PLAYER EXPLORER
+# TAB 1 — EXPLORER
 # =============================================================
 with tab1:
     st.markdown("<div class='section-title'>Player Explorer</div>", unsafe_allow_html=True)
@@ -272,14 +282,14 @@ with tab1:
         "Offensive Score","Defensive Score","Key Passing Score"
     ]], hide_index=True)
 
-    player = st.selectbox("Select player", [""] + df_f["Player"].tolist())
-    if player:
-        row = safe_get_player(df_f, player)
-        if row is not None:
+    p = st.selectbox("Select player", [""] + df_f["Player"].tolist())
+    if p:
+        row = safe_get_player(df_f, p)
+        if row:
             show_profile(row)
 
 # =============================================================
-# TAB 2 — PLAYER COMPARISON
+# TAB 2 — COMPARISON
 # =============================================================
 with tab2:
     st.markdown("<div class='section-title'>Player Comparison</div>", unsafe_allow_html=True)
@@ -290,24 +300,28 @@ with tab2:
         p2 = st.selectbox("Player 2", players, index=1)
 
         if p1 != p2:
-            r1, r2 = safe_get_player(df_f, p1), safe_get_player(df_f, p2)
-            if r1 and r2:
+            r1 = safe_get_player(df_f, p1)
+            r2 = safe_get_player(df_f, p2)
+
+            if r1 is not None and r2 is not None:
                 c1, c2 = st.columns(2)
                 with c1: show_profile(r1)
                 with c2: show_profile(r2)
+            else:
+                st.error("One of the selected players is not available.")
 
 # =============================================================
-# TAB 3 — PIZZA CHART
+# TAB 3 — PIZZA
 # =============================================================
 with tab3:
     st.markdown("<div class='section-title'>Pizza Chart</div>", unsafe_allow_html=True)
 
     all_players = sorted(df["Player"].unique())
     p = st.selectbox("Player", all_players)
-    threshold = st.slider("Minutes threshold", 0, 2000, 900, 50)
+    th = st.slider("Minutes threshold", 0, 2000, 900, 50)
 
     if p:
-        pizza(df, p, threshold)
+        pizza(df, p, th)
 
 # =============================================================
 # TAB 4 — ROLE CLUSTERING
@@ -316,7 +330,7 @@ with tab4:
     st.markdown("<div class='section-title'>Role Clustering</div>", unsafe_allow_html=True)
 
     if len(df_f) >= 3:
-        feats = ["Offensive Score", "Defensive Score", "Key Passing Score"]
+        feats = ["Offensive Score","Defensive Score","Key Passing Score"]
         X = StandardScaler().fit_transform(df_f[feats])
 
         k = st.slider("Number of roles", 2, 8, 4)
