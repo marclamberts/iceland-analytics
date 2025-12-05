@@ -1,135 +1,98 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.stats import zscore
 
 # =============================================================
 # PAGE CONFIG
 # =============================================================
-st.set_page_config(layout="wide", page_title="Outlier Scouting – ASA + 538")
-
+st.set_page_config(page_title="FiveThirtyEight Scouting – Dark Mode", layout="wide")
 
 # =============================================================
-# FIVE THIRTY EIGHT STYLE CSS
+# DARK THEME CSS (black background, white text)
 # =============================================================
 st.markdown("""
 <style>
 
-/* ------------------------------------------------------------
-   GLOBAL FONT COLOR — make EVERYTHING fully black
------------------------------------------------------------- */
-* {
-    color: #000000 !important;
+:root {
+    --bg: #000000;
+    --text: #FFFFFF;
+    --card: #111111;
+    --border: #333333;
 }
 
-/* ------------------------------------------------------------
-   APP BACKGROUND
------------------------------------------------------------- */
+/* Background */
 [data-testid="stAppViewContainer"] {
-    background: #FFFFFF !important;
+    background-color: var(--bg) !important;
+    color: var(--text) !important;
 }
 
-/* ------------------------------------------------------------
-   SIDEBAR
------------------------------------------------------------- */
+/* Sidebar */
 [data-testid="stSidebar"] {
-    background-color: #FFFFFF !important;
-    border-right: 1px solid #D1D5DB;
+    background-color: #0A0A0A !important;
+    border-right: 1px solid var(--border);
 }
 
-/* Sidebar text */
 [data-testid="stSidebar"] * {
-    color: #000000 !important;
+    color: var(--text) !important;
 }
 
-/* Sidebar titles */
-.sidebar-title {
-    font-weight: 800;
-    font-size: 1.25rem;
-    color: #000000 !important;
-}
-
-.sidebar-subtitle {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #000000 !important;
-}
-
-/* ------------------------------------------------------------
-   MAIN HEADERS + TITLES
------------------------------------------------------------- */
+/* Headers */
 .section-title {
     font-size: 1.35rem;
     font-weight: 700;
-    color: #000000 !important;
-    border-bottom: 2px solid #E5E7EB;
+    color: var(--text) !important;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.25rem;
+    margin-top: 1.4rem;
 }
 
-.main-header, .main-subheader {
-    color: #000000 !important;
+h1, h2, h3, h4, h5 {
+    color: var(--text) !important;
 }
 
-/* ------------------------------------------------------------
-   RESULT CARDS
------------------------------------------------------------- */
+/* Cards */
 .result-card {
-    padding: 14px 18px;
-    background: white !important;
-    border: 1px solid #D1D5DB;
+    background: var(--card) !important;
+    border: 1px solid var(--border);
     border-radius: 7px;
+    padding: 16px;
+    margin-bottom: 12px;
 }
 
 .result-title {
     font-size: 0.8rem;
+    color: #BBBBBB !important;
     text-transform: uppercase;
-    color: #000000 !important;
+    letter-spacing: 0.08em;
 }
 
 .result-value {
     font-size: 1.7rem;
     font-weight: 800;
-    color: #000000 !important;
+    color: var(--text) !important;
 }
 
-/* ------------------------------------------------------------
-   TABLE FIX — Make table readable
------------------------------------------------------------- */
-.dataframe, .dataframe th, .dataframe td {
-    color: #000000 !important;
+/* Tables */
+.dataframe, .dataframe td, .dataframe th {
+    color: var(--text) !important;
 }
 
 .dataframe thead th {
-    background: #F1F3F5 !important;
-    font-weight: 700 !important;
-    color: #000000 !important;
-}
-
-/* ------------------------------------------------------------
-   FORM ELEMENTS — selectbox, radio, sliders
------------------------------------------------------------- */
-.stSelectbox label, .stRadio label, .stSlider label {
-    color: #000000 !important;
-}
-
-.stSelectbox div, .stRadio div, .stSlider div {
-    color: #000000 !important;
+    background-color: #111111 !important;
+    border-bottom: 1px solid var(--border) !important;
 }
 
 /* Inputs */
 input, select, textarea {
-    color: #000000 !important;
+    background-color: #222 !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
 }
 
-/* Plot st.pyplot labels */
-svg text {
-    fill: #000000 !important;
-}
+svg text { fill: var(--text) !important; }
 
 </style>
 """, unsafe_allow_html=True)
-
 
 
 # =============================================================
@@ -140,188 +103,134 @@ df_raw = pd.read_excel(DATA_PATH)
 df = df_raw.copy()
 
 required_cols = [
-    "Player", "Team", "Team within selected timeframe", "Position", "Minutes played",
-    "Goals per 90", "xG per 90", "Shots per 90", "Assists per 90", "xA per 90",
-    "PAdj Interceptions", "PAdj Sliding tackles", "Aerial duels won, %",
-    "Defensive duels won, %", "Shots blocked per 90",
+    "Player", "Team", "Position", "Minutes played",
+    "Goals per 90", "xG per 90", "Shots per 90",
+    "Assists per 90", "xA per 90",
+    "PAdj Interceptions", "PAdj Sliding tackles",
+    "Aerial duels won, %", "Defensive duels won, %",
+    "Shots blocked per 90",
     "Key passes per 90", "Through passes per 90",
-    "Passes to final third per 90", "Passes to penalty area per 90",
+    "Passes to final third per 90", "Passes to penalty area per 90"
 ]
+
 missing = [c for c in required_cols if c not in df.columns]
 if missing:
-    st.error(f"Missing required columns in Excel: {missing}")
+    st.error(f"Missing required columns: {missing}")
     st.stop()
 
 
-
 # =============================================================
-# HELPER FUNCTIONS
+# SCORING FUNCTIONS
 # =============================================================
-def percentile(series: pd.Series) -> pd.Series:
+def percentile(series):
     return series.rank(pct=True) * 100
 
-
-def add_outlier_scores(df: pd.DataFrame) -> pd.DataFrame:
+def add_outlier_scores(df):
     df = df.copy()
 
-    offensive_metrics = [
-        "Goals per 90", "xG per 90", "Shots per 90",
-        "Assists per 90", "xA per 90"
-    ]
-    defensive_metrics = [
-        "PAdj Interceptions", "PAdj Sliding tackles",
-        "Aerial duels won, %", "Defensive duels won, %",
-        "Shots blocked per 90"
-    ]
-    key_passing_metrics = [
-        "Key passes per 90", "Through passes per 90",
-        "Assists per 90", "xA per 90",
-        "Passes to final final third per 90"
-        if "Passes to final final third per 90" in df.columns
-        else "Passes to final third per 90",
-        "Passes to penalty area per 90",
-    ]
+    offensive = ["Goals per 90","xG per 90","Shots per 90","Assists per 90","xA per 90"]
+    defensive = ["PAdj Interceptions","PAdj Sliding tackles","Aerial duels won, %","Defensive duels won, %","Shots blocked per 90"]
+    keypass = ["Key passes per 90","Through passes per 90","Assists per 90","xA per 90","Passes to final third per 90","Passes to penalty area per 90"]
 
-    df["Offensive_raw"] = df[offensive_metrics].mean(axis=1)
-    df["Defensive_raw"] = df[defensive_metrics].mean(axis=1)
-    df["KeyPassing_raw"] = df[key_passing_metrics].mean(axis=1)
-
-    df["Offensive Score"] = percentile(df["Offensive_raw"])
-    df["Defensive Score"] = percentile(df["Defensive_raw"])
-    df["Key Passing Score"] = percentile(df["KeyPassing_raw"])
+    df["Offensive Score"] = percentile(df[offensive].mean(axis=1))
+    df["Defensive Score"] = percentile(df[defensive].mean(axis=1))
+    df["Key Passing Score"] = percentile(df[keypass].mean(axis=1))
 
     return df
-
 
 df = add_outlier_scores(df)
 
 
-
 # =============================================================
-# --- FIVE THIRTY EIGHT FILTER PANEL ---
+# FILTER PANEL (SIDEBAR)
 # =============================================================
-def fivethirtyeight_filters(df):
-    st.sidebar.markdown('<div class="sidebar-title">538 Filters</div>', unsafe_allow_html=True)
+def filters(df):
+    st.sidebar.markdown("### Filters")
 
-    player_search = st.sidebar.text_input("Search Player")
+    # Search
+    search = st.sidebar.text_input("Search Player")
 
-    teams = ["All"] + sorted(df["Team"].dropna().unique())
+    # Team
+    teams = ["All"] + sorted(df["Team"].unique())
     team = st.sidebar.selectbox("Team", teams)
 
-    positions = sorted(df["Position"].dropna().unique())
-    pos_selected = st.sidebar.multiselect("Position(s)", positions, default=positions)
+    # Position
+    positions = sorted(df["Position"].unique())
+    pos = st.sidebar.multiselect("Position", positions, positions)
 
+    # Minutes
     min_m, max_m = int(df["Minutes played"].min()), int(df["Minutes played"].max())
-    minutes = st.sidebar.slider("Minutes Played", min_m, max_m, (min_m, max_m))
+    mins = st.sidebar.slider("Minutes Played", min_m, max_m, (min_m, max_m))
 
-    st.sidebar.markdown('<div class="sidebar-subtitle">Score Filters</div>', unsafe_allow_html=True)
-    off_min = st.sidebar.slider("Min Offensive Score", 0, 100, 0)
-    def_min = st.sidebar.slider("Min Defensive Score", 0, 100, 0)
-    key_min = st.sidebar.slider("Min Key Passing Score", 0, 100, 0)
+    # Scores
+    st.sidebar.markdown("### Score Filters")
+    off = st.sidebar.slider("Min Offensive Score", 0, 100, 0)
+    deff = st.sidebar.slider("Min Defensive Score", 0, 100, 0)
+    keyp = st.sidebar.slider("Min Key Passing Score", 0, 100, 0)
 
     df_f = df.copy()
 
-    if player_search:
-        df_f = df_f[df_f["Player"].str.contains(player_search, case=False)]
+    if search:
+        df_f = df_f[df_f["Player"].str.contains(search, case=False)]
 
     if team != "All":
         df_f = df_f[df_f["Team"] == team]
 
-    df_f = df_f[df_f["Position"].isin(pos_selected)]
-    df_f = df_f[(df_f["Minutes played"] >= minutes[0]) & (df_f["Minutes played"] <= minutes[1])]
+    df_f = df_f[df_f["Position"].isin(pos)]
+    df_f = df_f[(df_f["Minutes played"] >= mins[0]) & (df_f["Minutes played"] <= mins[1])]
     df_f = df_f[
-        (df_f["Offensive Score"] >= off_min) &
-        (df_f["Defensive Score"] >= def_min) &
-        (df_f["Key Passing Score"] >= key_min)
+        (df_f["Offensive Score"] >= off) &
+        (df_f["Defensive Score"] >= deff) &
+        (df_f["Key Passing Score"] >= keyp)
     ]
 
     return df_f
 
 
-
 # =============================================================
-# --- FIVE THIRTY EIGHT RESULTS PANEL ---
+# RESULTS PANEL (MAIN)
 # =============================================================
-def fivethirtyeight_results(df_filtered):
-    st.markdown('<div class="section-title">538 Scouting Results</div>', unsafe_allow_html=True)
+def results(df_f):
+    st.markdown("## FiveThirtyEight Scouting – Dark Mode")
 
+    # Summary metrics
     c1, c2, c3 = st.columns(3)
 
     with c1:
-        st.markdown('<div class="result-card">', unsafe_allow_html=True)
-        st.markdown('<div class="result-title">Players</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="result-value">{len(df_filtered)}</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="result-card"><div class="result-title">Players</div>'
+                    f'<div class="result-value">{len(df_f)}</div></div>', 
+                    unsafe_allow_html=True)
 
     with c2:
-        st.markdown('<div class="result-card">', unsafe_allow_html=True)
-        st.markdown('<div class="result-title">Avg Offensive</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="result-value">{df_filtered["Offensive Score"].mean():.1f}</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="result-card"><div class="result-title">Avg Offensive</div>'
+                    f'<div class="result-value">{df_f["Offensive Score"].mean():.1f}</div></div>', 
+                    unsafe_allow_html=True)
 
     with c3:
-        st.markdown('<div class="result-card">', unsafe_allow_html=True)
-        st.markdown('<div class="result-title">Avg Defensive</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="result-value">{df_filtered["Defensive Score"].mean():.1f}</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="result-card"><div class="result-title">Avg Defensive</div>'
+                    f'<div class="result-value">{df_f["Defensive Score"].mean():.1f}</div></div>', 
+                    unsafe_allow_html=True)
 
     st.markdown('<div class="section-title">Players</div>', unsafe_allow_html=True)
 
-    cols = [
+    columns = [
         "Player", "Team", "Position", "Minutes played",
         "Offensive Score", "Defensive Score", "Key Passing Score"
     ]
 
     st.dataframe(
-        df_filtered[cols].sort_values("Offensive Score", ascending=False),
+        df_f[columns].sort_values("Offensive Score", ascending=False),
         use_container_width=True,
         hide_index=True,
     )
 
 
-
 # =============================================================
-# NAVIGATION
+# MAIN
 # =============================================================
-menu = st.sidebar.radio(
-    "View",
-    [
-        "🏠 Dashboard",
-        "📊 Outlier Scouting",
-        "👤 Player Explorer",
-        "📈 Visual Explorer",
-        "🔵 FiveThirtyEight Scouting"
-    ],
-    index=0,
-)
+df_filtered = filters(df)
 
-
-
-# =============================================================
-# YOUR EXISTING PAGES (LEFT UNCHANGED)
-# =============================================================
-# ⚠️ I will not re-paste your full app here — we keep all your original
-#     Dashboard / Outlier Scouting / Player Explorer / Visual Explorer
-#     exactly as before.
-# Paste your original page code here unchanged.
-
-
-# =============================================================
-# NEW: FIVE THIRTY EIGHT SCOUTING PAGE
-# =============================================================
-if menu == "🔵 FiveThirtyEight Scouting":
-    st.markdown(
-        "<h1 style='font-weight:800;'>FiveThirtyEight Scouting</h1>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<p style='color:#444;'>A clean, high-contrast scouting interface inspired by FiveThirtyEight’s visual style.</p>",
-        unsafe_allow_html=True,
-    )
-
-    df_filtered = fivethirtyeight_filters(df)
-
-    if len(df_filtered) == 0:
-        st.warning("No players match the filters.")
-    else:
-        fivethirtyeight_results(df_filtered)
+if len(df_filtered) == 0:
+    st.warning("No players match the current filters.")
+else:
+    results(df_filtered)
