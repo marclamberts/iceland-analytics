@@ -78,10 +78,15 @@ svg text { fill: var(--fg) !important; }
 """, unsafe_allow_html=True)
 
 # =============================================================
-# LOAD DATA
+# LOAD & CLEAN DATA
 # =============================================================
 df = pd.read_excel("Iceland.xlsx").copy()
 
+# ---- Clean team + position columns to avoid sort errors ----
+df["Team"] = df["Team"].astype(str)
+df["Position"] = df["Position"].astype(str)
+
+# ---- Clean numeric columns ----
 numeric_cols = [
     "Goals per 90","xG per 90","Shots per 90",
     "Assists per 90","xA per 90",
@@ -96,31 +101,41 @@ for col in numeric_cols:
     df[col] = pd.to_numeric(df[col], errors="coerce")
 
 df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
-df = df[df["Player"].notna()]
+df = df[df["Player"].notna()]  # drop empty rows
 
 # =============================================================
-# SCORING
+# SCORING FUNCTIONS
 # =============================================================
-def percentile(s): return s.rank(pct=True) * 100
+def percentile(s): 
+    return s.rank(pct=True) * 100
 
-df["Offensive Score"] = percentile(df[["Goals per 90","xG per 90","Shots per 90",
-                                      "Assists per 90","xA per 90"]].mean(axis=1))
+df["Offensive Score"] = percentile(
+    df[["Goals per 90","xG per 90","Shots per 90",
+        "Assists per 90","xA per 90"]].mean(axis=1)
+)
 
-df["Defensive Score"] = percentile(df[["PAdj Interceptions","PAdj Sliding tackles",
-                                      "Aerial duels won, %","Defensive duels won, %",
-                                      "Shots blocked per 90"]].mean(axis=1))
+df["Defensive Score"] = percentile(
+    df[["PAdj Interceptions","PAdj Sliding tackles",
+        "Aerial duels won, %","Defensive duels won, %",
+        "Shots blocked per 90"]].mean(axis=1)
+)
 
-df["Key Passing Score"] = percentile(df[["Key passes per 90","Through passes per 90",
-                                        "Assists per 90","xA per 90",
-                                        "Passes to final third per 90","Passes to penalty area per 90"]].mean(axis=1))
+df["Key Passing Score"] = percentile(
+    df[["Key passes per 90","Through passes per 90",
+        "Assists per 90","xA per 90",
+        "Passes to final third per 90","Passes to penalty area per 90"]].mean(axis=1)
+)
 
 # =============================================================
-# PLAYER PROFILE
+# PLAYER PROFILE PANEL
 # =============================================================
 def show_player_profile(row):
     st.markdown(f"## {row['Player']}")
-    st.markdown(f"**Team:** {row['Team']} — {row['Position']}<br>**Minutes:** {int(row['Minutes played'])}",
-                unsafe_allow_html=True)
+    st.markdown(
+        f"**Team:** {row['Team']} — {row['Position']}<br>"
+        f"**Minutes:** {int(row['Minutes played'])}",
+        unsafe_allow_html=True,
+    )
 
     metrics = {
         "Off": row["Offensive Score"],
@@ -129,16 +144,20 @@ def show_player_profile(row):
     }
 
     labels = list(metrics.keys())
-    stats = list(metrics.values())
-    stats += stats[:1]
-    angles = np.linspace(0, 2*np.pi, len(labels), endpoint=False).tolist()
+    values = list(metrics.values())
+    values += values[:1]
+    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     angles += angles[:1]
 
-    fig, ax = plt.subplots(subplot_kw={"polar": True}, figsize=(5, 5), facecolor="#000")
+    fig, ax = plt.subplots(
+        figsize=(5, 5),
+        subplot_kw=dict(polar=True),
+        facecolor="#000",
+    )
     ax.set_facecolor("#000")
 
-    ax.plot(angles, stats, color="#FF5C35", linewidth=2)
-    ax.fill(angles, stats, color="#FF5C35", alpha=0.25)
+    ax.plot(angles, values, color="#FF5C35", linewidth=2)
+    ax.fill(angles, values, color="#FF5C35", alpha=0.25)
     ax.set_xticks(angles[:-1])
     ax.set_xticklabels(labels, color="white")
     ax.set_yticklabels([])
@@ -147,20 +166,22 @@ def show_player_profile(row):
 # =============================================================
 # SIDEBAR FILTERS
 # =============================================================
-st.sidebar.header("Filters")
+st.sidebar.title("Filters")
 
-search = st.sidebar.text_input("Search")
+search = st.sidebar.text_input("Search Player")
 
-teams = ["All"] + sorted(df["Team"].unique())
+teams = ["All"] + sorted(df["Team"].unique().tolist())
 team_filter = st.sidebar.selectbox("Team", teams)
 
-positions = sorted(df["Position"].unique())
+positions = sorted(df["Position"].unique().tolist())
 position_filter = st.sidebar.multiselect("Position", positions, positions)
 
-min_minutes = st.sidebar.slider("Minutes Played",
-                                int(df["Minutes played"].min()),
-                                int(df["Minutes played"].max()),
-                                (200, int(df["Minutes played"].max())))
+minutes = st.sidebar.slider(
+    "Minutes Played",
+    int(df["Minutes played"].min()),
+    int(df["Minutes played"].max()),
+    (200, int(df["Minutes played"].max())),
+)
 
 st.sidebar.subheader("Score Filters")
 min_off = st.sidebar.slider("Min Offensive", 0, 100, 0)
@@ -168,7 +189,7 @@ min_def = st.sidebar.slider("Min Defensive", 0, 100, 0)
 min_key = st.sidebar.slider("Min Key Passing", 0, 100, 0)
 
 # =============================================================
-# FILTER DATA
+# APPLY FILTERS
 # =============================================================
 df_f = df.copy()
 
@@ -180,41 +201,53 @@ if team_filter != "All":
 
 df_f = df_f[df_f["Position"].isin(position_filter)]
 
-df_f = df_f[(df_f["Minutes played"] >= min_minutes[0]) &
-            (df_f["Minutes played"] <= min_minutes[1])]
+df_f = df_f[
+    (df_f["Minutes played"] >= minutes[0]) &
+    (df_f["Minutes played"] <= minutes[1])
+]
 
-df_f = df_f[(df_f["Offensive Score"] >= min_off) &
-            (df_f["Defensive Score"] >= min_def) &
-            (df_f["Key Passing Score"] >= min_key)]
-
-# =============================================================
-# NAVIGATION MODES
-# =============================================================
-mode = st.radio("Mode",
-                ["Player Explorer",
-                 "Player Comparison",
-                 "Team Dashboard",
-                 "Style Map (PCA)",
-                 "Role Clustering"],
-                horizontal=True)
+df_f = df_f[
+    (df_f["Offensive Score"] >= min_off) &
+    (df_f["Defensive Score"] >= min_def) &
+    (df_f["Key Passing Score"] >= min_key)
+]
 
 # =============================================================
-# MODE: PLAYER EXPLORER
+# NAVIGATION
+# =============================================================
+mode = st.radio(
+    "Mode",
+    [
+        "Player Explorer",
+        "Player Comparison",
+        "Team Dashboard",
+        "Style Map (PCA)",
+        "Role Clustering"
+    ],
+    horizontal=True,
+)
+
+# =============================================================
+# MODE 1 — PLAYER EXPLORER
 # =============================================================
 if mode == "Player Explorer":
     st.markdown("## Player Explorer")
 
-    st.dataframe(df_f[[
-        "Player","Team","Position","Minutes played",
-        "Offensive Score","Defensive Score","Key Passing Score"
-    ]], hide_index=True, use_container_width=True)
+    st.dataframe(
+        df_f[[
+            "Player","Team","Position","Minutes played",
+            "Offensive Score","Defensive Score","Key Passing Score"
+        ]],
+        hide_index=True,
+        use_container_width=True,
+    )
 
-    player_choice = st.selectbox("Inspect Player", ["None"] + df_f["Player"].tolist())
-    if player_choice != "None":
-        show_player_profile(df_f[df_f["Player"] == player_choice].iloc[0])
+    choice = st.selectbox("Select player", ["None"] + df_f["Player"].tolist())
+    if choice != "None":
+        show_player_profile(df_f[df_f["Player"] == choice].iloc[0])
 
 # =============================================================
-# MODE: PLAYER COMPARISON
+# MODE 2 — PLAYER COMPARISON
 # =============================================================
 elif mode == "Player Comparison":
     st.markdown("## Player Comparison")
@@ -224,95 +257,79 @@ elif mode == "Player Comparison":
     p2 = st.selectbox("Player 2", players)
 
     if p1 and p2 and p1 != p2:
-        r1 = df_f[df_f["Player"] == p1].iloc[0]
-        r2 = df_f[df_f["Player"] == p2].iloc[0]
-
         c1, c2 = st.columns(2)
-        with c1: show_player_profile(r1)
-        with c2: show_player_profile(r2)
-
-        st.markdown("### Attribute Gaps")
-
-        compare_df = pd.DataFrame({
-            "Metric": ["Offense", "Defense", "Key Passing"],
-            p1: [r1["Offensive Score"], r1["Defensive Score"], r1["Key Passing Score"]],
-            p2: [r2["Offensive Score"], r2["Defensive Score"], r2["Key Passing Score"]],
-        })
-
-        compare_df["Difference"] = compare_df[p1] - compare_df[p2]
-        st.table(compare_df)
+        with c1:
+            show_player_profile(df_f[df_f["Player"] == p1].iloc[0])
+        with c2:
+            show_player_profile(df_f[df_f["Player"] == p2].iloc[0])
 
 # =============================================================
-# MODE: TEAM DASHBOARD
+# MODE 3 — TEAM DASHBOARD
 # =============================================================
 elif mode == "Team Dashboard":
     st.markdown("## Team Dashboard")
 
-    team = st.selectbox("Select team", sorted(df["Team"].unique()))
-    df_t = df[df["Team"] == team]
-
-    st.markdown(f"### Top Players – {team}")
+    team = st.selectbox("Select Team", sorted(df["Team"].unique()))
+    df_team = df[df["Team"] == team]
 
     c1, c2, c3 = st.columns(3)
 
     with c1:
-        st.markdown("#### Offensive")
-        st.table(df_t.nlargest(5, "Offensive Score")[["Player", "Offensive Score"]])
+        st.markdown("### Top Offensive")
+        st.table(df_team.nlargest(5, "Offensive Score")[["Player","Offensive Score"]])
 
     with c2:
-        st.markdown("#### Defensive")
-        st.table(df_t.nlargest(5, "Defensive Score")[["Player", "Defensive Score"]])
+        st.markdown("### Top Defensive")
+        st.table(df_team.nlargest(5, "Defensive Score")[["Player","Defensive Score"]])
 
     with c3:
-        st.markdown("#### Key Passing")
-        st.table(df_t.nlargest(5, "Key Passing Score")[["Player", "Key Passing Score"]])
+        st.markdown("### Top Creators")
+        st.table(df_team.nlargest(5, "Key Passing Score")[["Player","Key Passing Score"]])
 
 # =============================================================
-# MODE: STYLE MAP (PCA)
+# MODE 4 — PCA STYLE MAP
 # =============================================================
 elif mode == "Style Map (PCA)":
-    st.markdown("## Player Style Map (PCA)")
+    st.markdown("## PCA Player Style Map")
 
-    data = df_f[["Offensive Score","Defensive Score","Key Passing Score"]]
-
+    X = df_f[["Offensive Score","Defensive Score","Key Passing Score"]].copy()
     scaler = StandardScaler()
-    X = scaler.fit_transform(data)
+    Xs = scaler.fit_transform(X)
 
     pca = PCA(n_components=2)
-    components = pca.fit_transform(X)
+    coords = pca.fit_transform(Xs)
 
-    df_f["PC1"] = components[:,0]
-    df_f["PC2"] = components[:,1]
+    df_f["PC1"] = coords[:,0]
+    df_f["PC2"] = coords[:,1]
 
-    fig, ax = plt.subplots(figsize=(8, 6), facecolor="#000")
+    fig, ax = plt.subplots(figsize=(8,6), facecolor="#000")
     ax.set_facecolor("#000")
+    ax.scatter(df_f["PC1"], df_f["PC2"], c="#FF5C35", alpha=0.84)
 
-    ax.scatter(df_f["PC1"], df_f["PC2"], c="#FF5C35", alpha=0.85)
-
-    for _, r in df_f.iterrows():
-        ax.text(r["PC1"], r["PC2"], r["Player"], fontsize=8, color="white")
-
-    ax.set_xlabel("PC1 (style)", color="white")
-    ax.set_ylabel("PC2 (style)", color="white")
+    for _, row in df_f.iterrows():
+        ax.text(row["PC1"], row["PC2"], row["Player"], fontsize=8, color="white")
 
     st.pyplot(fig)
 
 # =============================================================
-# MODE: ROLE CLUSTERING
+# MODE 5 — ROLE CLUSTERING
 # =============================================================
 elif mode == "Role Clustering":
-    st.markdown("## Role Clustering (K-Means)")
+    st.markdown("## Role Clustering")
 
     features = df_f[["Offensive Score","Defensive Score","Key Passing Score"]]
-
     scaler = StandardScaler()
     X = scaler.fit_transform(features)
 
-    k = st.slider("Number of clusters", 2, 8, 4)
+    k = st.slider("Number of roles", 2, 8, 4)
     kmeans = KMeans(n_clusters=k, random_state=42)
-    df_f["Cluster"] = kmeans.fit_predict(X)
+    df_f["Role"] = kmeans.fit_predict(X)
 
-    st.dataframe(df_f[["Player","Team","Cluster",
-                       "Offensive Score","Defensive Score","Key Passing Score"]],
-                 hide_index=True)
-
+    st.dataframe(
+        df_f[[
+            "Player","Team","Role",
+            "Offensive Score","Defensive Score","Key Passing Score"
+        ]],
+        hide_index=True,
+        use_container_width=True,
+    )
