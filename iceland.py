@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
@@ -132,7 +133,7 @@ def show_profile(row):
     st.pyplot(fig)
 
 # =============================================================
-# NAIVE ROLE LABELS
+# ROLE LABELLING
 # =============================================================
 def assign_roles(df_roles, cols, km):
     centers = pd.DataFrame(km.cluster_centers_, columns=cols)
@@ -156,7 +157,45 @@ def assign_roles(df_roles, cols, km):
     return df_roles
 
 # =============================================================
-# SINGLE PLAYER PIZZA
+# SHARED PIZZA METRICS (same for single + comparison)
+# =============================================================
+PIZZA_PARAMS = [
+    "Goals per 90","Shots per 90","Assists per 90","xG per 90","xA per 90",
+    "Key passes per 90","Through passes per 90","Passes to final third per 90",
+    "Passes to penalty area per 90","PAdj Interceptions",
+    "PAdj Sliding tackles","Defensive duels won, %",
+    "Aerial duels won, %","Shots blocked per 90"
+]
+
+# =============================================================
+# SAFE PERCENTILES FOR PIZZA
+# =============================================================
+def safe_percentiles(row, pool, params):
+    values = []
+    for p in params:
+        val = row[p]
+
+        if pd.isna(val):
+            values.append(0)
+            continue
+
+        pop = pool[p].dropna()
+        if pop.empty:
+            values.append(0)
+            continue
+
+        perc = stats.percentileofscore(pop, val)
+        if np.isnan(perc):
+            perc = 0
+        if perc == 100:
+            perc = 99
+
+        values.append(int(perc))
+
+    return values
+
+# =============================================================
+# SINGLE PLAYER PIZZA (uses PIZZA_PARAMS)
 # =============================================================
 def pizza(df_all, player, min_thresh=900):
     pool = df_all[df_all["Minutes played"] >= min_thresh]
@@ -165,33 +204,10 @@ def pizza(df_all, player, min_thresh=900):
         st.error("Player not in population.")
         return
 
-    params = [
-        "Goals per 90","Shots per 90","Assists per 90","xG per 90","xA per 90",
-        "Key passes per 90","Through passes per 90","Passes to final third per 90",
-        "Passes to penalty area per 90","PAdj Interceptions",
-        "PAdj Sliding tackles","Defensive duels won, %",
-        "Aerial duels won, %","Shots blocked per 90"
-    ]
-
-    values = []
-    for p in params:
-        val = row[p]
-        if pd.isna(val):
-            values.append(0)
-            continue
-        pop = pool[p].dropna()
-        if pop.empty:
-            values.append(0)
-            continue
-        perc = stats.percentileofscore(pop, val)
-        if np.isnan(perc):
-            perc = 0
-        if perc == 100:
-            perc = 99
-        values.append(int(perc))
+    values = safe_percentiles(row, pool, PIZZA_PARAMS)
 
     baker = PyPizza(
-        params=params,
+        params=PIZZA_PARAMS,
         straight_line_color="white",
         last_circle_lw=5,
         other_circle_lw=2,
@@ -199,11 +215,14 @@ def pizza(df_all, player, min_thresh=900):
     )
 
     fig, ax = baker.make_pizza(
-        values, figsize=(10, 10), slice_colors=["#598BAF"] * len(params),
+        values,
+        figsize=(10, 10),
+        slice_colors=["#598BAF"] * len(PIZZA_PARAMS),
         color_blank_space="same",
         kwargs_params=dict(color="white", fontsize=10),
         kwargs_values=dict(color="white", fontsize=9),
     )
+
     fig.patch.set_facecolor("black")
     ax.set_facecolor("black")
 
@@ -211,50 +230,21 @@ def pizza(df_all, player, min_thresh=900):
     st.pyplot(fig)
 
 # =============================================================
-# TWO PLAYER COMPARISON PIZZA
+# TWO PLAYER COMPARISON PIZZA (uses SAME metrics)
 # =============================================================
 def comparison_pizza(df_all, p1, p2, min_thresh=1500):
     pool = df_all[df_all["Minutes played"] >= min_thresh]
     r1 = safe_get_player(pool, p1)
     r2 = safe_get_player(pool, p2)
     if r1 is None or r2 is None:
-        st.error("One or both players missing from filtered dataset.")
+        st.error("One or both players missing in filtered population.")
         return
 
-    df_metrics = pool.drop(
-        columns=["Team","Position","Age","Matches played","Minutes played"],
-        errors="ignore"
-    ).reset_index(drop=True)
-
-    params = [c for c in df_metrics.columns if c not in ["Player","index"]]
-
-    def get_vals(name):
-        row = df_metrics[df_metrics["Player"] == name]
-        if row.empty:
-            return None
-        vals_raw = row.iloc[0][params].values
-        result = []
-        for val, param in zip(vals_raw, params):
-            if pd.isna(val):
-                result.append(0)
-                continue
-            pop = df_metrics[param].dropna()
-            if pop.empty:
-                result.append(0)
-                continue
-            perc = stats.percentileofscore(pop, val)
-            if np.isnan(perc):
-                perc = 0
-            if perc == 100:
-                perc = 99
-            result.append(int(perc))
-        return result
-
-    vals1 = get_vals(p1)
-    vals2 = get_vals(p2)
+    vals1 = safe_percentiles(r1, pool, PIZZA_PARAMS)
+    vals2 = safe_percentiles(r2, pool, PIZZA_PARAMS)
 
     baker = PyPizza(
-        params=params,
+        params=PIZZA_PARAMS,
         straight_line_color="white",
         straight_line_lw=1.5,
         last_circle_lw=6,
@@ -353,7 +343,6 @@ with tab2:
     st.markdown("<div class='section-title'>Two-Player Comparison Radar</div>", unsafe_allow_html=True)
 
     all_players = sorted(df["Player"].unique())
-
     col1, col2 = st.columns(2)
     with col1:
         p1 = st.selectbox("Player 1", all_players, key="cmp_p1")
@@ -407,11 +396,9 @@ with tab5:
     with c1:
         st.write("**Top Offensive**")
         st.table(dft.nlargest(5, "Offensive Score")[["Player","Offensive Score"]])
-
     with c2:
         st.write("**Top Defensive**")
         st.table(dft.nlargest(5, "Defensive Score")[["Player","Defensive Score"]])
-
     with c3:
         st.write("**Top Creators**")
         st.table(dft.nlargest(5, "Key Passing Score")[["Player","Key Passing Score"]])
