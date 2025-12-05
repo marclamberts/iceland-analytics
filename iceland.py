@@ -15,70 +15,118 @@ st.set_page_config(layout="wide", page_title="Outlier Scouting – ASA + 538")
 # =============================================================
 st.markdown("""
 <style>
-/* --- GLOBAL BACKGROUND --- */
+
+/* ------------------------------------------------------------
+   GLOBAL FONT COLOR — make EVERYTHING fully black
+------------------------------------------------------------ */
+* {
+    color: #000000 !important;
+}
+
+/* ------------------------------------------------------------
+   APP BACKGROUND
+------------------------------------------------------------ */
 [data-testid="stAppViewContainer"] {
-    background: #F8F9FA;
+    background: #FFFFFF !important;
 }
 
-/* --- SIDEBAR --- */
+/* ------------------------------------------------------------
+   SIDEBAR
+------------------------------------------------------------ */
 [data-testid="stSidebar"] {
-    background: #FFFFFF;
-    border-right: 1px solid #E5E7EB;
+    background-color: #FFFFFF !important;
+    border-right: 1px solid #D1D5DB;
 }
 
+/* Sidebar text */
+[data-testid="stSidebar"] * {
+    color: #000000 !important;
+}
+
+/* Sidebar titles */
 .sidebar-title {
-    color: #333;
     font-weight: 800;
     font-size: 1.25rem;
-    margin-bottom: 0.4rem;
+    color: #000000 !important;
 }
 
 .sidebar-subtitle {
-    color: #666;
     font-size: 0.75rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-top: 1.2rem;
+    letter-spacing: 0.1em;
+    color: #000000 !important;
 }
 
-/* --- SECTION TITLES --- */
+/* ------------------------------------------------------------
+   MAIN HEADERS + TITLES
+------------------------------------------------------------ */
 .section-title {
     font-size: 1.35rem;
     font-weight: 700;
-    color: #222;
+    color: #000000 !important;
     border-bottom: 2px solid #E5E7EB;
-    padding-bottom: 0.25rem;
-    margin-top: 1.4rem;
 }
 
-/* --- RESULT CARDS --- */
+.main-header, .main-subheader {
+    color: #000000 !important;
+}
+
+/* ------------------------------------------------------------
+   RESULT CARDS
+------------------------------------------------------------ */
 .result-card {
     padding: 14px 18px;
-    background: white;
-    border: 1px solid #E1E4E8;
+    background: white !important;
+    border: 1px solid #D1D5DB;
     border-radius: 7px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    margin-bottom: 10px;
 }
 
 .result-title {
     font-size: 0.8rem;
     text-transform: uppercase;
-    color: #555;
-    letter-spacing: 0.08em;
+    color: #000000 !important;
 }
 
 .result-value {
     font-size: 1.7rem;
     font-weight: 800;
-    color: #111;
+    color: #000000 !important;
 }
 
-/* --- TABLE HEADER --- */
-.dataframe thead th {
-    background: #F1F3F5;
-    font-weight: 600;
+/* ------------------------------------------------------------
+   TABLE FIX — Make table readable
+------------------------------------------------------------ */
+.dataframe, .dataframe th, .dataframe td {
+    color: #000000 !important;
 }
+
+.dataframe thead th {
+    background: #F1F3F5 !important;
+    font-weight: 700 !important;
+    color: #000000 !important;
+}
+
+/* ------------------------------------------------------------
+   FORM ELEMENTS — selectbox, radio, sliders
+------------------------------------------------------------ */
+.stSelectbox label, .stRadio label, .stSlider label {
+    color: #000000 !important;
+}
+
+.stSelectbox div, .stRadio div, .stSlider div {
+    color: #000000 !important;
+}
+
+/* Inputs */
+input, select, textarea {
+    color: #000000 !important;
+}
+
+/* Plot st.pyplot labels */
+svg text {
+    fill: #000000 !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
