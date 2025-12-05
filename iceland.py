@@ -1,3 +1,5 @@
+import math
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,6 +8,9 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from scipy import stats
+
+from mplsoccer import PyPizza  # make sure mplsoccer is installed
 
 # =============================================================
 # PAGE CONFIG
@@ -80,25 +85,27 @@ svg text { fill: var(--fg) !important; }
 # =============================================================
 # LOAD & CLEAN DATA
 # =============================================================
-df = pd.read_excel("Iceland.xlsx").copy()
+DATA_PATH = "Iceland.xlsx"  # adjust path if needed
+df = pd.read_excel(DATA_PATH).copy()
 
-# ---- Clean team + position columns to avoid sort errors ----
+# Force Team and Position to strings (avoid sorting errors)
 df["Team"] = df["Team"].astype(str)
 df["Position"] = df["Position"].astype(str)
 
-# ---- Clean numeric columns ----
+# Numeric columns used in scoring & pizza
 numeric_cols = [
-    "Goals per 90","xG per 90","Shots per 90",
-    "Assists per 90","xA per 90",
-    "PAdj Interceptions","PAdj Sliding tackles",
-    "Aerial duels won, %","Defensive duels won, %",
+    "Goals per 90", "xG per 90", "Shots per 90",
+    "Assists per 90", "xA per 90",
+    "PAdj Interceptions", "PAdj Sliding tackles",
+    "Aerial duels won, %", "Defensive duels won, %",
     "Shots blocked per 90",
-    "Key passes per 90","Through passes per 90",
-    "Passes to final third per 90","Passes to penalty area per 90"
+    "Key passes per 90", "Through passes per 90",
+    "Passes to final third per 90", "Passes to penalty area per 90",
 ]
 
 for col in numeric_cols:
-    df[col] = pd.to_numeric(df[col], errors="coerce")
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
 df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
 df = df[df["Player"].notna()]  # drop empty rows
@@ -106,30 +113,30 @@ df = df[df["Player"].notna()]  # drop empty rows
 # =============================================================
 # SCORING FUNCTIONS
 # =============================================================
-def percentile(s): 
+def percentile(s: pd.Series) -> pd.Series:
     return s.rank(pct=True) * 100
 
 df["Offensive Score"] = percentile(
-    df[["Goals per 90","xG per 90","Shots per 90",
-        "Assists per 90","xA per 90"]].mean(axis=1)
+    df[["Goals per 90", "xG per 90", "Shots per 90",
+        "Assists per 90", "xA per 90"]].mean(axis=1)
 )
 
 df["Defensive Score"] = percentile(
-    df[["PAdj Interceptions","PAdj Sliding tackles",
-        "Aerial duels won, %","Defensive duels won, %",
+    df[["PAdj Interceptions", "PAdj Sliding tackles",
+        "Aerial duels won, %", "Defensive duels won, %",
         "Shots blocked per 90"]].mean(axis=1)
 )
 
 df["Key Passing Score"] = percentile(
-    df[["Key passes per 90","Through passes per 90",
-        "Assists per 90","xA per 90",
-        "Passes to final third per 90","Passes to penalty area per 90"]].mean(axis=1)
+    df[["Key passes per 90", "Through passes per 90",
+        "Assists per 90", "xA per 90",
+        "Passes to final third per 90", "Passes to penalty area per 90"]].mean(axis=1)
 )
 
 # =============================================================
 # PLAYER PROFILE PANEL
 # =============================================================
-def show_player_profile(row):
+def show_player_profile(row: pd.Series):
     st.markdown(f"## {row['Player']}")
     st.markdown(
         f"**Team:** {row['Team']} — {row['Position']}<br>"
@@ -140,7 +147,7 @@ def show_player_profile(row):
     metrics = {
         "Off": row["Offensive Score"],
         "Def": row["Defensive Score"],
-        "KeyP": row["Key Passing Score"]
+        "KeyP": row["Key Passing Score"],
     }
 
     labels = list(metrics.keys())
@@ -161,6 +168,179 @@ def show_player_profile(row):
     ax.set_xticks(angles[:-1])
     ax.set_xticklabels(labels, color="white")
     ax.set_yticklabels([])
+    st.pyplot(fig)
+
+# =============================================================
+# ROLE NAMING LOGIC FOR K-MEANS CLUSTERS
+# =============================================================
+def assign_role_names(df_roles: pd.DataFrame, feature_cols, kmeans_model: KMeans) -> pd.DataFrame:
+    """
+    Assign readable football role names based on cluster centroids in feature_cols.
+    """
+    centroids = pd.DataFrame(kmeans_model.cluster_centers_, columns=feature_cols)
+
+    names = []
+    for _, row in centroids.iterrows():
+        off = row["Offensive Score"]
+        deff = row["Defensive Score"]
+        kp = row["Key Passing Score"]
+
+        # basic shape logic
+        if off > kp and off > deff:
+            role = "Attacking Forward"
+        elif kp > off and kp > deff:
+            role = "Advanced Creator"
+        elif deff > off and deff > kp:
+            role = "Defensive Destroyer"
+        elif off > 0.7 and kp > 0.7:
+            role = "Attacking Playmaker"
+        elif deff > 0.7 and kp > 0.7:
+            role = "Deep Progressor"
+        elif deff > 0.7 and off > 0.7:
+            role = "Box-to-Box Hybrid"
+        else:
+            role = "All-Round Player"
+
+        names.append(role)
+
+    # map cluster index → role name
+    df_roles["Role Name"] = df_roles["Role"].apply(lambda x: names[x])
+    return df_roles
+
+# =============================================================
+# PIZZA CHART FUNCTION
+# =============================================================
+def show_pizza_chart(df_all: pd.DataFrame, player_name: str, minute_threshold: int = 900):
+    """
+    Streamlit-friendly PyPizza chart like your example, using league percentiles.
+    Filters by minutes >= minute_threshold to define population.
+    """
+    # Filter population for percentiles
+    df_p = df_all[df_all["Minutes played"] >= minute_threshold].copy()
+    if len(df_p) == 0:
+        st.warning("No players meet the minutes threshold for pizza chart.")
+        return
+
+    # Parameters (you can adjust order / content here)
+    params = [
+        "Goals per 90", "Shots per 90", "Assists per 90", "xG per 90", "xA per 90",
+        "Key passes per 90", "Through passes per 90",
+        "Passes to final third per 90", "Passes to penalty area per 90",
+        "PAdj Interceptions", "PAdj Sliding tackles",
+        "Defensive duels won, %", "Aerial duels won, %",
+        "Shots blocked per 90",
+    ]
+
+    # Ensure columns exist
+    params = [p for p in params if p in df_p.columns]
+
+    # Make numeric
+    for p in params:
+        df_p[p] = pd.to_numeric(df_p[p], errors="coerce")
+
+    if player_name not in df_p["Player"].values:
+        st.warning("Selected player does not meet the minute/position filter or isn't in the dataset.")
+        return
+
+    player_row = df_p[df_p["Player"] == player_name].iloc[0]
+
+    # Percentiles
+    values = []
+    for p in params:
+        percentile_val = stats.percentileofscore(df_p[p].dropna(), player_row[p])
+        percentile_val = 99 if percentile_val == 100 else math.floor(percentile_val)
+        values.append(percentile_val)
+
+    # Build pizza
+    baker = PyPizza(
+        params=params,
+        straight_line_color="white",
+        straight_line_lw=1.5,
+        last_circle_lw=6,
+        other_circle_lw=2.5,
+        other_circle_ls="-.",
+        inner_circle_size=15,
+    )
+
+    # Slice colors: attacking / defending / key passing grouping (roughly)
+    n = len(params)
+    # Simple scheme: first 5 attacking, next 4 key passing, rest defensive
+    slice_colors = []
+    for i, p in enumerate(params):
+        if i < 5:
+            slice_colors.append("#598BAF")   # attacking
+        elif i < 9:
+            slice_colors.append("#ffa600")   # key passing
+        else:
+            slice_colors.append("#ff6361")   # defending
+
+    text_colors = ["white"] * n
+
+    fig, ax = baker.make_pizza(
+        values,
+        figsize=(12, 12),
+        param_location=110,
+        color_blank_space="same",
+        slice_colors=slice_colors,
+        kwargs_slices=dict(
+            edgecolor="black",
+            zorder=2,
+            linewidth=2,
+        ),
+        kwargs_params=dict(
+            color="white",
+            fontsize=12,
+            weight="bold",
+            fontname="Arial",
+            va="center",
+            alpha=.9,
+        ),
+        kwargs_values=dict(
+            color="white",
+            fontsize=10,
+            weight="bold",
+            fontname="Arial",
+            zorder=3,
+            bbox=dict(
+                edgecolor="white",
+                facecolor="#1a1a1a",
+                boxstyle="round,pad=0.3",
+                lw=1,
+            ),
+        ),
+    )
+
+    fig.patch.set_facecolor("black")
+    ax.set_facecolor("black")
+
+    # Title & subtitle
+    fig.text(
+        0.5, 0.97,
+        f"{player_name}",
+        size=26, ha="center", color="white",
+        weight="bold", fontname="Arial",
+    )
+
+    # Simple subtitle: team, minutes
+    fig.text(
+        0.5, 0.94,
+        f"{player_row['Team']} | Minutes: {int(player_row['Minutes played'])}",
+        size=14, ha="center", color="white", fontname="Arial",
+    )
+
+    # Category labels & colored rectangles like your example
+    fig.text(
+        0.35, 0.9,
+        "Attacking     Key passing     Defending",
+        size=14, color="white", fontname="Arial",
+    )
+
+    fig.patches.extend([
+        plt.Rectangle((0.32, 0.897), 0.018, 0.018, fill=True, color="#598BAF", transform=fig.transFigure, figure=fig),
+        plt.Rectangle((0.46, 0.897), 0.018, 0.018, fill=True, color="#ffa600", transform=fig.transFigure, figure=fig),
+        plt.Rectangle((0.60, 0.897), 0.018, 0.018, fill=True, color="#ff6361", transform=fig.transFigure, figure=fig),
+    ])
+
     st.pyplot(fig)
 
 # =============================================================
@@ -194,7 +374,7 @@ min_key = st.sidebar.slider("Min Key Passing", 0, 100, 0)
 df_f = df.copy()
 
 if search:
-    df_f = df_f[df_f["Player"].str.contains(search, case=False)]
+    df_f = df_f[df_f["Player"].str.contains(search, case=False, na=False)]
 
 if team_filter != "All":
     df_f = df_f[df_f["Team"] == team_filter]
@@ -222,7 +402,8 @@ mode = st.radio(
         "Player Comparison",
         "Team Dashboard",
         "Style Map (PCA)",
-        "Role Clustering"
+        "Role Clustering",
+        "Pizza Chart",
     ],
     horizontal=True,
 )
@@ -235,8 +416,8 @@ if mode == "Player Explorer":
 
     st.dataframe(
         df_f[[
-            "Player","Team","Position","Minutes played",
-            "Offensive Score","Defensive Score","Key Passing Score"
+            "Player", "Team", "Position", "Minutes played",
+            "Offensive Score", "Defensive Score", "Key Passing Score",
         ]],
         hide_index=True,
         use_container_width=True,
@@ -253,15 +434,18 @@ elif mode == "Player Comparison":
     st.markdown("## Player Comparison")
 
     players = df_f["Player"].tolist()
-    p1 = st.selectbox("Player 1", players)
-    p2 = st.selectbox("Player 2", players)
+    if len(players) < 2:
+        st.warning("Not enough players after filters to compare.")
+    else:
+        p1 = st.selectbox("Player 1", players, index=0)
+        p2 = st.selectbox("Player 2", players, index=1 if len(players) > 1 else 0)
 
-    if p1 and p2 and p1 != p2:
-        c1, c2 = st.columns(2)
-        with c1:
-            show_player_profile(df_f[df_f["Player"] == p1].iloc[0])
-        with c2:
-            show_player_profile(df_f[df_f["Player"] == p2].iloc[0])
+        if p1 != p2:
+            c1, c2 = st.columns(2)
+            with c1:
+                show_player_profile(df_f[df_f["Player"] == p1].iloc[0])
+            with c2:
+                show_player_profile(df_f[df_f["Player"] == p2].iloc[0])
 
 # =============================================================
 # MODE 3 — TEAM DASHBOARD
@@ -269,67 +453,95 @@ elif mode == "Player Comparison":
 elif mode == "Team Dashboard":
     st.markdown("## Team Dashboard")
 
-    team = st.selectbox("Select Team", sorted(df["Team"].unique()))
+    team = st.selectbox("Select Team", sorted(df["Team"].unique().tolist()))
     df_team = df[df["Team"] == team]
 
     c1, c2, c3 = st.columns(3)
 
     with c1:
         st.markdown("### Top Offensive")
-        st.table(df_team.nlargest(5, "Offensive Score")[["Player","Offensive Score"]])
+        st.table(df_team.nlargest(5, "Offensive Score")[["Player", "Offensive Score"]])
 
     with c2:
         st.markdown("### Top Defensive")
-        st.table(df_team.nlargest(5, "Defensive Score")[["Player","Defensive Score"]])
+        st.table(df_team.nlargest(5, "Defensive Score")[["Player", "Defensive Score"]])
 
     with c3:
         st.markdown("### Top Creators")
-        st.table(df_team.nlargest(5, "Key Passing Score")[["Player","Key Passing Score"]])
+        st.table(df_team.nlargest(5, "Key Passing Score")[["Player", "Key Passing Score"]])
 
 # =============================================================
 # MODE 4 — PCA STYLE MAP
 # =============================================================
 elif mode == "Style Map (PCA)":
-    st.markdown("## PCA Player Style Map")
+    st.markdown("## Player Style Map (PCA)")
 
-    X = df_f[["Offensive Score","Defensive Score","Key Passing Score"]].copy()
-    scaler = StandardScaler()
-    Xs = scaler.fit_transform(X)
+    if len(df_f) < 2:
+        st.warning("Not enough players after filters to compute PCA.")
+    else:
+        X = df_f[["Offensive Score", "Defensive Score", "Key Passing Score"]].copy()
+        scaler = StandardScaler()
+        Xs = scaler.fit_transform(X)
 
-    pca = PCA(n_components=2)
-    coords = pca.fit_transform(Xs)
+        pca = PCA(n_components=2)
+        coords = pca.fit_transform(Xs)
 
-    df_f["PC1"] = coords[:,0]
-    df_f["PC2"] = coords[:,1]
+        df_f["PC1"] = coords[:, 0]
+        df_f["PC2"] = coords[:, 1]
 
-    fig, ax = plt.subplots(figsize=(8,6), facecolor="#000")
-    ax.set_facecolor("#000")
-    ax.scatter(df_f["PC1"], df_f["PC2"], c="#FF5C35", alpha=0.84)
+        fig, ax = plt.subplots(figsize=(8, 6), facecolor="#000")
+        ax.set_facecolor("#000")
+        ax.scatter(df_f["PC1"], df_f["PC2"], c="#FF5C35", alpha=0.84)
 
-    for _, row in df_f.iterrows():
-        ax.text(row["PC1"], row["PC2"], row["Player"], fontsize=8, color="white")
+        for _, row in df_f.iterrows():
+            ax.text(row["PC1"], row["PC2"], row["Player"], fontsize=8, color="white")
 
-    st.pyplot(fig)
+        ax.set_xlabel("PC1", color="white")
+        ax.set_ylabel("PC2", color="white")
+        ax.tick_params(colors="white")
+        ax.grid(color="#333333", alpha=0.4)
+
+        st.pyplot(fig)
 
 # =============================================================
-# MODE 5 — ROLE CLUSTERING
+# MODE 5 — ROLE CLUSTERING (WITH NAMES)
 # =============================================================
 elif mode == "Role Clustering":
-    st.markdown("## Role Clustering")
+    st.markdown("## Role Clustering with Named Roles")
 
-    features = df_f[["Offensive Score","Defensive Score","Key Passing Score"]]
-    scaler = StandardScaler()
-    X = scaler.fit_transform(features)
+    if len(df_f) < 2:
+        st.warning("Not enough players after filters to cluster.")
+    else:
+        feature_cols = ["Offensive Score", "Defensive Score", "Key Passing Score"]
+        features = df_f[feature_cols]
+        scaler = StandardScaler()
+        X = scaler.fit_transform(features)
 
-    k = st.slider("Number of roles", 2, 8, 4)
-    kmeans = KMeans(n_clusters=k, random_state=42)
-    df_f["Role"] = kmeans.fit_predict(X)
+        k = st.slider("Number of roles (clusters)", 2, 8, 4)
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+        df_f["Role"] = kmeans.fit_predict(X)
 
-    st.dataframe(
-        df_f[[
-            "Player","Team","Role",
-            "Offensive Score","Defensive Score","Key Passing Score"
-        ]],
-        hide_index=True,
-        use_container_width=True,
-    )
+        df_roles = assign_role_names(df_f.copy(), feature_cols, kmeans)
+
+        st.dataframe(
+            df_roles[[
+                "Player", "Team", "Role", "Role Name",
+                "Offensive Score", "Defensive Score", "Key Passing Score",
+            ]],
+            hide_index=True,
+            use_container_width=True,
+        )
+
+# =============================================================
+# MODE 6 — PIZZA CHART
+# =============================================================
+elif mode == "Pizza Chart":
+    st.markdown("## Player Pizza Chart")
+
+    # Use unfiltered df so a player doesn't disappear due to sidebar filters
+    player_choice = st.selectbox("Select player", sorted(df["Player"].unique().tolist()))
+
+    min_thresh = st.slider("Minutes threshold for comparison population", 0, 2000, 900, step=100)
+
+    if player_choice:
+        show_pizza_chart(df, player_choice, minute_threshold=min_thresh)
