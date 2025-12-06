@@ -58,11 +58,51 @@ html, body, [data-testid="stAppViewContainer"] {
 """, unsafe_allow_html=True)
 
 # =============================================================
-# SAFE PLAYER LOOKUP
+# LOGIN SYSTEM
 # =============================================================
-def safe_get_player(df, name):
-    sub = df[df["Player"] == name]
-    return None if sub.empty else sub.iloc[0]
+VALID_USER = "lamberts"
+VALID_PASS = "lamberts"
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "page" not in st.session_state:
+    st.session_state.page = "home"
+
+def login_screen():
+    st.title("🔐 Professional Scouting Platform")
+    st.subheader("Login")
+    st.write("Please enter your credentials to continue.")
+
+    user = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        if user == VALID_USER and password == VALID_PASS:
+            st.session_state.logged_in = True
+            st.session_state.page = "home"
+            st.experimental_rerun()
+        else:
+            st.error("Incorrect username or password.")
+
+def logout_button():
+    if st.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.page = "home"
+        st.experimental_rerun()
+
+if not st.session_state.logged_in:
+    login_screen()
+    st.stop()
+
+# =============================================================
+# TOP BAR (TITLE + LOGOUT)
+# =============================================================
+top_col1, top_col2 = st.columns([4, 1])
+with top_col1:
+    st.title("⚽ Professional Scouting Platform")
+with top_col2:
+    logout_button()
 
 # =============================================================
 # LOAD DATA
@@ -89,7 +129,8 @@ df = df[df["Player"].notna()]
 # =============================================================
 # COMPOSITE SCORING
 # =============================================================
-def pct(s): return s.rank(pct=True) * 100
+def pct(s):
+    return s.rank(pct=True) * 100
 
 df["Offensive Score"] = pct(df[[
     "Goals per 90","xG per 90","Shots per 90","Assists per 90","xA per 90"
@@ -104,6 +145,13 @@ df["Key Passing Score"] = pct(df[[
     "Key passes per 90","Through passes per 90","Assists per 90","xA per 90",
     "Passes to final third per 90","Passes to penalty area per 90"
 ]].mean(axis=1))
+
+# =============================================================
+# SAFE PLAYER LOOKUP
+# =============================================================
+def safe_get_player(df_local, name):
+    sub = df_local[df_local["Player"] == name]
+    return None if sub.empty else sub.iloc[0]
 
 # =============================================================
 # PLAYER RADAR (3-axis)
@@ -157,7 +205,7 @@ def assign_roles(df_roles, cols, km):
     return df_roles
 
 # =============================================================
-# SHARED PIZZA METRICS (same for single + comparison)
+# SHARED PIZZA METRICS
 # =============================================================
 PIZZA_PARAMS = [
     "Goals per 90","Shots per 90","Assists per 90","xG per 90","xA per 90",
@@ -195,7 +243,7 @@ def safe_percentiles(row, pool, params):
     return values
 
 # =============================================================
-# SINGLE PLAYER PIZZA (uses PIZZA_PARAMS)
+# SINGLE PLAYER PIZZA
 # =============================================================
 def pizza(df_all, player, min_thresh=900):
     pool = df_all[df_all["Minutes played"] >= min_thresh]
@@ -230,7 +278,7 @@ def pizza(df_all, player, min_thresh=900):
     st.pyplot(fig)
 
 # =============================================================
-# TWO PLAYER COMPARISON PIZZA (uses SAME metrics)
+# TWO PLAYER COMPARISON PIZZA
 # =============================================================
 def comparison_pizza(df_all, p1, p2, min_thresh=1500):
     pool = df_all[df_all["Minutes played"] >= min_thresh]
@@ -278,7 +326,7 @@ def comparison_pizza(df_all, p1, p2, min_thresh=1500):
     st.pyplot(fig)
 
 # =============================================================
-# SIDEBAR FILTERS
+# SIDEBAR FILTERS (USED BY MULTIPLE PAGES)
 # =============================================================
 with st.sidebar:
     st.header("Filters")
@@ -309,87 +357,92 @@ df_f = df_f[
 ]
 
 # =============================================================
-# MAIN TABS
+# PLATFORM SCREEN WITH 6 TILES
 # =============================================================
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "Player Explorer",
-    "Comparison Radar",
-    "Pizza Chart",
-    "Role Clustering",
-    "Team Dashboard",
-    "Style Map"
-])
+st.markdown("### Select a module:")
+
+tile_css = """
+<style>
+.stButton > button {
+    border-radius: 14px;
+    border: 1px solid #444444;
+    background-color: #111111;
+    color: #FFFFFF;
+    padding: 16px 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: 0.2s;
+}
+.stButton > button:hover {
+    background-color: #222222;
+    transform: scale(1.03);
+    border-color: #888888;
+}
+</style>
+"""
+st.markdown(tile_css, unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns(3)
+
+def tile(label, page_key):
+    if st.button(label):
+        st.session_state.page = page_key
+
+with col1:
+    tile("📊 Data Scouting", "data")
+    tile("📈 Outlier Scouting", "outliers")
+
+with col2:
+    tile("🔥 Overperformance (Attackers)", "attackers")
+    tile("🆚 Comparison", "compare")
+
+with col3:
+    tile("🍕 Pizza Plots", "pizza")
+    tile("📉 Bar Graphs", "bars")
+
+st.divider()
 
 # =============================================================
-# TAB 1 — PLAYER EXPLORER
+# PAGE LOGIC
 # =============================================================
-with tab1:
-    st.markdown("<div class='section-title'>Player Explorer</div>", unsafe_allow_html=True)
+
+# 1) DATA SCOUTING
+if st.session_state.page == "data" or st.session_state.page == "home":
+    st.markdown("<div class='section-title'>Data Scouting</div>", unsafe_allow_html=True)
+
+    st.subheader("Player Explorer")
     st.dataframe(df_f[[
         "Player","Team","Position","Minutes played",
         "Offensive Score","Defensive Score","Key Passing Score"
     ]], hide_index=True)
 
-    p = st.selectbox("Select Player", [""] + df_f["Player"].tolist())
+    p = st.selectbox("Select Player", [""] + df_f["Player"].tolist(), key="ds_player")
     if p:
         row = safe_get_player(df_f, p)
-        if row:
+        if row is not None:
             show_profile(row)
 
-# =============================================================
-# TAB 2 — CLEAN TWO-PLAYER COMPARISON RADAR
-# =============================================================
-with tab2:
-    st.markdown("<div class='section-title'>Two-Player Comparison Radar</div>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.subheader("Role Clustering")
 
-    all_players = sorted(df["Player"].unique())
-    col1, col2 = st.columns(2)
-    with col1:
-        p1 = st.selectbox("Player 1", all_players, key="cmp_p1")
-    with col2:
-        p2 = st.selectbox("Player 2", all_players, key="cmp_p2")
-
-    th = st.slider("Minutes Threshold (Population)", 0, 2000, 1500, step=100)
-
-    if p1 != p2:
-        comparison_pizza(df, p1, p2, min_thresh=th)
-    else:
-        st.warning("Choose two different players.")
-
-# =============================================================
-# TAB 3 — SINGLE PLAYER PIZZA
-# =============================================================
-with tab3:
-    st.markdown("<div class='section-title'>Player Pizza Chart</div>", unsafe_allow_html=True)
-    p = st.selectbox("Player", sorted(df["Player"].unique()), key="pizza_select")
-    th = st.slider("Minutes Threshold", 0, 2000, 900, step=50)
-    if p:
-        pizza(df, p, th)
-
-# =============================================================
-# TAB 4 — ROLE CLUSTERING
-# =============================================================
-with tab4:
-    st.markdown("<div class='section-title'>Role Clustering</div>", unsafe_allow_html=True)
     if len(df_f) >= 3:
         feats = ["Offensive Score","Defensive Score","Key Passing Score"]
         X = StandardScaler().fit_transform(df_f[feats])
-        k = st.slider("Number of Roles", 2, 8, 4)
+        k = st.slider("Number of Roles", 2, 8, 4, key="role_k")
         km = KMeans(n_clusters=k, n_init=10)
-        df_f["Role"] = km.fit_predict(X)
-        df_roles = assign_roles(df_f.copy(), feats, km)
+        df_f_roles = df_f.copy()
+        df_f_roles["Role"] = km.fit_predict(X)
+        df_roles = assign_roles(df_f_roles, feats, km)
 
         st.dataframe(df_roles[[
             "Player","Team","Role","Role Name",
             "Offensive Score","Defensive Score","Key Passing Score"
         ]], hide_index=True)
 
-# =============================================================
-# TAB 5 — TEAM DASHBOARD
-# =============================================================
-with tab5:
-    st.markdown("<div class='section-title'>Team Dashboard</div>", unsafe_allow_html=True)
-    t = st.selectbox("Team", sorted(df["Team"].unique()))
+    st.markdown("---")
+    st.subheader("Team Dashboard")
+
+    t = st.selectbox("Team", sorted(df["Team"].unique()), key="team_dash")
     dft = df[df["Team"] == t]
 
     c1, c2, c3 = st.columns(3)
@@ -403,26 +456,148 @@ with tab5:
         st.write("**Top Creators**")
         st.table(dft.nlargest(5, "Key Passing Score")[["Player","Key Passing Score"]])
 
-# =============================================================
-# TAB 6 — PCA STYLE MAP
-# =============================================================
-with tab6:
-    st.markdown("<div class='section-title'>Style Map (PCA)</div>", unsafe_allow_html=True)
+# 2) OUTLIER SCOUTING
+elif st.session_state.page == "outliers":
+    st.markdown("<div class='section-title'>Outlier Scouting</div>", unsafe_allow_html=True)
+    st.write("Identify statistical outliers based on composite scores.")
+
+    threshold = st.slider("Z-score threshold (absolute value)", 1.5, 3.5, 2.0, 0.1)
+
+    scores = ["Offensive Score","Defensive Score","Key Passing Score"]
+    df_out = df_f.copy()
+    for sc in scores:
+        m = df_out[sc].mean()
+        s = df_out[sc].std(ddof=0)
+        if s == 0 or np.isnan(s):
+            df_out[f"{sc} Z"] = 0
+        else:
+            df_out[f"{sc} Z"] = (df_out[sc] - m) / s
+
+    cols_z = [f"{s} Z" for s in scores]
+    df_out["Max |Z|"] = df_out[cols_z].abs().max(axis=1)
+    outliers = df_out[df_out["Max |Z|"] >= threshold].sort_values("Max |Z|", ascending=False)
+
+    st.write(f"Players with |z| ≥ {threshold}:")
+    if outliers.empty:
+        st.info("No outliers found with the current threshold and filters.")
+    else:
+        st.dataframe(outliers[[
+            "Player","Team","Position","Minutes played",
+            "Offensive Score","Defensive Score","Key Passing Score","Max |Z|"
+        ] + cols_z], hide_index=True)
+
+# 3) OVERPERFORMANCE SCOUTING (ATTACKERS)
+elif st.session_state.page == "attackers":
+    st.markdown("<div class='section-title'>Overperformance Scouting (Attackers)</div>", unsafe_allow_html=True)
+    st.write("Attackers who are overperforming their expected goals (Goals per 90 vs xG per 90).")
+
+    min_mins = st.slider("Minimum minutes played", 0, int(df["Minutes played"].max()), 600, 50)
+    min_diff = st.slider("Minimum (Goals - xG) per 90", 0.0, 1.5, 0.3, 0.05)
+
+    # Simple position filter for forwards/attackers (adapt if needed)
+    attackers = df[df["Position"].str.contains("FW|ST|ATT|W", case=False, na=False)].copy()
+    attackers = attackers[attackers["Minutes played"] >= min_mins]
+
+    attackers["G - xG per 90"] = attackers["Goals per 90"] - attackers["xG per 90"]
+    overperf = attackers[attackers["G - xG per 90"] >= min_diff]
+    overperf = overperf.sort_values("G - xG per 90", ascending=False)
+
+    if overperf.empty:
+        st.info("No attackers match the overperformance criteria.")
+    else:
+        st.dataframe(overperf[[
+            "Player","Team","Position","Minutes played",
+            "Goals per 90","xG per 90","G - xG per 90",
+            "Offensive Score"
+        ]], hide_index=True)
+
+# 4) COMPARISON
+elif st.session_state.page == "compare":
+    st.markdown("<div class='section-title'>Comparison</div>", unsafe_allow_html=True)
+
+    st.subheader("Two-Player Pizza Comparison")
+    all_players = sorted(df["Player"].unique())
+    col1, col2 = st.columns(2)
+    with col1:
+        p1 = st.selectbox("Player 1", all_players, key="cmp_p1")
+    with col2:
+        p2 = st.selectbox("Player 2", all_players, key="cmp_p2")
+
+    th = st.slider("Minutes Threshold (Population)", 0, 2000, 1500, step=100)
+
+    if p1 == p2:
+        st.warning("Choose two different players.")
+    else:
+        comparison_pizza(df, p1, p2, min_thresh=th)
+
+    st.markdown("---")
+    st.subheader("Style Map (PCA)")
+
     if len(df_f) >= 2:
         feats = df_f[["Offensive Score","Defensive Score","Key Passing Score"]]
         X = StandardScaler().fit_transform(feats)
         pca = PCA(n_components=2)
         coords = pca.fit_transform(X)
-        df_f["PC1"], df_f["PC2"] = coords[:,0], coords[:,1]
+        df_pca = df_f.copy()
+        df_pca["PC1"], df_pca["PC2"] = coords[:,0], coords[:,1]
 
         fig, ax = plt.subplots(figsize=(7, 5), facecolor="#000")
         ax.set_facecolor("#000")
-        ax.scatter(df_f["PC1"], df_f["PC2"], c="#FF5C35", alpha=0.8)
+        ax.scatter(df_pca["PC1"], df_pca["PC2"], c="#FF5C35", alpha=0.8)
 
-        for _, r in df_f.iterrows():
+        for _, r in df_pca.iterrows():
             ax.text(r["PC1"], r["PC2"], r["Player"], fontsize=7, color="white")
 
         ax.set_xlabel("PC1", color="white")
         ax.set_ylabel("PC2", color="white")
         ax.grid(color="#222")
+        st.pyplot(fig)
+    else:
+        st.info("Not enough players in the filtered set for PCA.")
+
+# 5) PIZZAPLOTS
+elif st.session_state.page == "pizza":
+    st.markdown("<div class='section-title'>Pizza Plots</div>", unsafe_allow_html=True)
+    st.subheader("Single Player Pizza Chart")
+
+    p = st.selectbox("Player", sorted(df["Player"].unique()), key="pizza_select")
+    th = st.slider("Minutes Threshold", 0, 2000, 900, step=50)
+    if p:
+        pizza(df, p, th)
+
+# 6) BAR GRAPHS
+elif st.session_state.page == "bars":
+    st.markdown("<div class='section-title'>Bar Graphs</div>", unsafe_allow_html=True)
+    st.write("Create bar graphs for any metric.")
+
+    metrics = [
+        "Offensive Score","Defensive Score","Key Passing Score"
+    ] + PIZZA_PARAMS
+
+    metric = st.selectbox("Metric", metrics, key="bar_metric")
+    group_by = st.radio("Group by", ["Team","Player"], key="bar_group")
+
+    if group_by == "Team":
+        df_bar = df_f.groupby("Team")[metric].mean().reset_index()
+        df_bar = df_bar.sort_values(metric, ascending=False)
+
+        fig, ax = plt.subplots(figsize=(8, 5), facecolor="#000")
+        ax.set_facecolor("#000")
+        ax.bar(df_bar["Team"], df_bar[metric])
+        ax.set_xticklabels(df_bar["Team"], rotation=45, ha="right", color="white")
+        ax.set_ylabel(metric, color="white")
+        ax.tick_params(axis="y", colors="white")
+        st.pyplot(fig)
+
+    else:  # Player
+        top_n = st.slider("Top N players", 5, 30, 15, key="bar_topn")
+        df_bar = df_f[["Player", metric]].dropna()
+        df_bar = df_bar.sort_values(metric, ascending=False).head(top_n)
+
+        fig, ax = plt.subplots(figsize=(8, 5), facecolor="#000")
+        ax.set_facecolor("#000")
+        ax.bar(df_bar["Player"], df_bar[metric])
+        ax.set_xticklabels(df_bar["Player"], rotation=45, ha="right", color="white")
+        ax.set_ylabel(metric, color="white")
+        ax.tick_params(axis="y", colors="white")
         st.pyplot(fig)
