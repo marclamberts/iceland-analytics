@@ -6,3 +6,4 @@ scipy
 scikit-learn
 openpyxl
 mplsoccer
+experimental_rerun
